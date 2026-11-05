@@ -1,0 +1,67 @@
+<Window x:Class="AiPhoto.App.Pin.PinWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:tr="clr-namespace:AiPhoto.App.Translation"
+        Title="AiPhoto 贴图"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True"
+        WindowStartupLocation="Manual" Background="#FF2F7CF6"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        FontFamily="{StaticResource UiFont}">
+
+    <Window.ContextMenu>
+        <ContextMenu>
+            <MenuItem x:Name="MenuToggleOriginal" Header="显示原文 (按住 Shift)" Click="OnToggleOriginal" IsCheckable="True" />
+            <MenuItem Header="复制译文" Click="OnCopyText" InputGestureText="Ctrl+Shift+C" />
+            <MenuItem Header="复制图片" Click="OnCopyImage" InputGestureText="Ctrl+C" />
+            <MenuItem Header="另存为..." Click="OnSave" InputGestureText="Ctrl+S" />
+            <Separator />
+            <MenuItem Header="翻译 / 重新翻译" Click="OnRetranslate" InputGestureText="Ctrl+T" />
+            <MenuItem Header="缩放到 100%" Click="OnResetZoom" />
+            <Separator />
+            <MenuItem Header="关闭" Click="OnClose" InputGestureText="Esc" />
+        </ContextMenu>
+    </Window.ContextMenu>
+
+    <Grid x:Name="Root" Background="Black" ClipToBounds="True">
+        <!-- Hosted in a plain Canvas so the pixel canvas (image size, larger than the window at >100% DPI)
+             is not layout-clipped in its local, pre-scale coordinates. See CaptureWindow.xaml. -->
+        <Canvas>
+        <Canvas x:Name="PixelCanvas" HorizontalAlignment="Left" VerticalAlignment="Top">
+            <Canvas.RenderTransform>
+                <ScaleTransform x:Name="PixelScale" ScaleX="1" ScaleY="1" />
+            </Canvas.RenderTransform>
+            <Image x:Name="ImageView" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality" />
+            <tr:TranslationLayer x:Name="Layer" />
+        </Canvas>
+        </Canvas>
+
+        <Border x:Name="StatusPill" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6"
+                Background="#E6202124" CornerRadius="10" Padding="8,3" Visibility="Collapsed"
+                MouseLeftButtonDown="OnStatusClick" Cursor="Hand">
+            <StackPanel Orientation="Horizontal">
+                <Path x:Name="Spinner" Width="12" Height="12" Margin="0,0,6,0" Stroke="White" StrokeThickness="2"
+                      Data="M6,1 A5,5 0 1 1 1,6" RenderTransformOrigin="0.5,0.5" VerticalAlignment="Center">
+                    <Path.RenderTransform>
+                        <RotateTransform x:Name="SpinnerRotation" />
+                    </Path.RenderTransform>
+                </Path>
+                <TextBlock x:Name="StatusText" Foreground="White" FontSize="12" TextWrapping="Wrap" MaxWidth="420"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
+
+        <Border x:Name="HoverBar" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="4"
+                Style="{StaticResource ToolbarBorder}" Padding="2" Visibility="Collapsed">
+            <StackPanel Orientation="Horizontal">
+                <ToggleButton x:Name="OriginalToggle" Style="{StaticResource ToolButton}" Width="28" Height="26"
+                              Click="OnToggleOriginal" ToolTip="显示原文（按住 Shift 临时查看）">
+                    <TextBlock Text="原" FontFamily="{StaticResource UiFont}" FontSize="13" />
+                </ToggleButton>
+                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Click="OnCopyText" ToolTip="复制全部译文" Content="&#xE8C8;" FontSize="14" />
+                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Click="OnSave" ToolTip="另存为" Content="&#xE74E;" FontSize="14" />
+                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Click="OnRetranslate" ToolTip="重新翻译" Content="&#xE72C;" FontSize="14" />
+                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Click="OnClose" ToolTip="关闭 (Esc / 双击)" Content="&#xE711;" FontSize="14" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

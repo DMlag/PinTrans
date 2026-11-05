@@ -1,0 +1,25 @@
+<Window x:Class="AiPhoto.App.LongCapture.LongCapturePanel"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AiPhoto 长截图"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True"
+        AllowsTransparency="True" Background="Transparent" SizeToContent="WidthAndHeight"
+        WindowStartupLocation="Manual" FontFamily="{StaticResource UiFont}" ShowActivated="False">
+    <Border Style="{StaticResource ToolbarBorder}" Padding="12,10" Margin="8" Width="230">
+        <StackPanel>
+            <DockPanel>
+                <TextBlock Text="长截图" Foreground="White" FontSize="14" FontWeight="SemiBold" />
+                <TextBlock x:Name="HeightText" Foreground="#FFB0B0B0" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" />
+            </DockPanel>
+            <TextBlock x:Name="HintText" Foreground="#FFCFCFCF" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
+                       Text="在选区内滚动鼠标滚轮，或点击“自动滚动”。完成后点击“完成”。" />
+            <TextBlock x:Name="WarningText" Foreground="#FFFFB74D" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed" />
+            <StackPanel Orientation="Horizontal" Margin="0,10,0,0" HorizontalAlignment="Right">
+                <ToggleButton x:Name="AutoButton" Content="自动滚动" Padding="10,4" Margin="0,0,6,0" Click="OnAutoClick" />
+                <Button Content="取消" Padding="10,4" Margin="0,0,6,0" Click="OnCancelClick" />
+                <Button Content="完成" Padding="14,4" Click="OnFinishClick" IsDefault="True"
+                        Background="{StaticResource AccentBrush}" Foreground="White" BorderThickness="0" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>

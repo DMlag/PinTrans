@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>AiPhoto.Core</RootNamespace>
+    <!-- Platform-independent logic (imaging, stitching, translation, settings). Unit-tested on any OS. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AiPhoto.Core.Tests" />
+  </ItemGroup>
+
+</Project>

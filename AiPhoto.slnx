@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AiPhoto.App/AiPhoto.App.csproj" />
+    <Project Path="src/AiPhoto.Core/AiPhoto.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AiPhoto.Core.Tests/AiPhoto.Core.Tests.csproj" />
+  </Folder>
+</Solution>

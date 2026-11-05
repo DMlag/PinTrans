@@ -1,0 +1,396 @@
+<Window x:Class="AiPhoto.App.Settings.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:AiPhoto.App.Settings"
+        Title="AiPhoto 设置" Width="640" Height="620" MinWidth="560" MinHeight="480"
+        WindowStartupLocation="CenterScreen" FontFamily="{StaticResource UiFont}" FontSize="13"
+        ResizeMode="CanResizeWithGrip">
+    <Window.Resources>
+        <Style TargetType="TextBox">
+            <Setter Property="Padding" Value="4,3" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="PasswordBox">
+            <Setter Property="Padding" Value="4,3" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Padding" Value="6,3" />
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Margin" Value="0,4" />
+        </Style>
+        <Style x:Key="Row" TargetType="Grid">
+            <Setter Property="Margin" Value="0,5" />
+        </Style>
+        <Style TargetType="GroupBox">
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel Margin="12">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="保存" Width="88" Padding="0,5" IsDefault="True" Click="OnSave" Margin="0,0,8,0" />
+            <Button Content="取消" Width="88" Padding="0,5" IsCancel="True" />
+        </StackPanel>
+
+        <TabControl>
+            <!-- ============================================================ Translation -->
+            <TabItem Header="AI 翻译">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+                        <GroupBox Header="Google Gemini">
+                            <StackPanel>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="API Key" Style="{StaticResource SettingsLabel}" />
+                                    <PasswordBox x:Name="ApiKeyBox" Grid.Column="1" />
+                                    <TextBox x:Name="ApiKeyPlain" Grid.Column="1" Visibility="Collapsed" />
+                                    <CheckBox x:Name="ShowKey" Grid.Column="2" Content="显示" Margin="8,0,0,0" VerticalAlignment="Center"
+                                              Checked="OnShowKeyChanged" Unchecked="OnShowKeyChanged" />
+                                </Grid>
+                                <TextBlock Style="{StaticResource HintText}" Margin="110,0,0,4">
+                                    在 <Hyperlink NavigateUri="https://aistudio.google.com/apikey" RequestNavigate="OnHyperlink">Google AI Studio</Hyperlink>
+                                    创建 API Key。Google AI Ultra 附带的每月 Google Cloud 额度需先在 Google Developer Program 中激活并关联到该 Key 所在的项目。
+                                </TextBlock>
+
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="模型" Style="{StaticResource SettingsLabel}" />
+                                    <ComboBox x:Name="ModelBox" Grid.Column="1" IsEditable="True" Text="{Binding Translation.Model}" />
+                                    <Button Grid.Column="2" Content="测试并获取模型" Margin="8,0,0,0" Padding="10,3" Click="OnTestConnection" />
+                                </Grid>
+                                <TextBlock x:Name="TestResult" Style="{StaticResource HintText}" Margin="110,0,0,4"
+                                           Text="推荐 Flash 系列：速度快、费用低。gemini-flash-latest 会自动指向最新的 Flash 模型。" />
+
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="目标语言" Style="{StaticResource SettingsLabel}" />
+                                    <ComboBox x:Name="TargetLanguageBox" Grid.Column="1" IsEditable="True" Text="{Binding Translation.TargetLanguage}" />
+                                </Grid>
+
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="思考程度" Style="{StaticResource SettingsLabel}" />
+                                    <ComboBox x:Name="ThinkingBox" Grid.Column="1" DisplayMemberPath="Value" SelectedValuePath="Key"
+                                              SelectedValue="{Binding Translation.Thinking}" />
+                                </Grid>
+
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="图片清晰度" Style="{StaticResource SettingsLabel}" />
+                                    <ComboBox x:Name="MediaResolutionBox" Grid.Column="1" DisplayMemberPath="Value" SelectedValuePath="Key"
+                                              SelectedValue="{Binding Translation.MediaResolution}" />
+                                </Grid>
+
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="上传最大边长" Style="{StaticResource SettingsLabel}" />
+                                    <TextBox Grid.Column="1" Text="{Binding Translation.MaxImageEdge}" />
+                                    <TextBlock Grid.Column="2" Text=" 像素（超出会等比缩小）" VerticalAlignment="Center" Foreground="#777" />
+                                </Grid>
+
+                                <CheckBox Content="跳过已经是目标语言的文字" IsChecked="{Binding Translation.SkipTextInTargetLanguage}" Margin="110,6,0,4" />
+
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="译文字体" Style="{StaticResource SettingsLabel}" />
+                                    <ComboBox x:Name="FontBox" Grid.Column="1" IsEditable="True" Text="{Binding Translation.OverlayFontFamily}" />
+                                </Grid>
+
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="自定义要求" Style="{StaticResource SettingsLabel}" VerticalAlignment="Top" Margin="0,4,12,0" />
+                                    <TextBox Grid.Column="1" Height="70" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"
+                                             VerticalScrollBarVisibility="Auto" Text="{Binding Translation.CustomInstructions}" />
+                                </Grid>
+                                <TextBlock Style="{StaticResource HintText}" Margin="110,0,0,0"
+                                           Text="例如：游戏术语保留英文；译文使用口语化风格；“Cloud”统一译为“云端”。" />
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="接口地址（高级）">
+                            <StackPanel>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Base URL" Style="{StaticResource SettingsLabel}" />
+                                    <TextBox Grid.Column="1" Text="{Binding Translation.BaseUrl}" />
+                                </Grid>
+                                <TextBlock Style="{StaticResource HintText}" Margin="110,0,0,0"
+                                           Text="默认 https://generativelanguage.googleapis.com 。可填写自建的反向代理/中转地址（需兼容 Gemini REST 接口）。" />
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============================================================ Network -->
+            <TabItem Header="网络代理">
+                <StackPanel Margin="12">
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="代理模式" Style="{StaticResource SettingsLabel}" />
+                        <ComboBox x:Name="ProxyModeBox" Grid.Column="1" DisplayMemberPath="Value" SelectedValuePath="Key"
+                                  SelectedValue="{Binding Network.ProxyMode}" SelectionChanged="OnProxyModeChanged" />
+                    </Grid>
+                    <StackPanel x:Name="ProxyDetails">
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="90" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="地址" Style="{StaticResource SettingsLabel}" />
+                            <TextBox Grid.Column="1" Text="{Binding Network.ProxyHost}" />
+                            <TextBlock Grid.Column="2" Text="端口" Margin="12,0,8,0" VerticalAlignment="Center" />
+                            <TextBox Grid.Column="3" Text="{Binding Network.ProxyPort}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="用户名（可选）" Style="{StaticResource SettingsLabel}" />
+                            <TextBox Grid.Column="1" Text="{Binding Network.ProxyUsername}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="密码（可选）" Style="{StaticResource SettingsLabel}" />
+                            <PasswordBox x:Name="ProxyPasswordBox" Grid.Column="1" />
+                        </Grid>
+                    </StackPanel>
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="100" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="超时" Style="{StaticResource SettingsLabel}" />
+                        <TextBox Grid.Column="1" Text="{Binding Network.TimeoutSeconds}" />
+                        <TextBlock Grid.Column="2" Text=" 秒" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource HintText}" Margin="110,6,0,0" TextWrapping="Wrap"
+                               Text="“系统代理”使用 Windows 的代理设置。常见本地代理端口：Clash 7890（HTTP/SOCKS5 混合）、v2rayN 10808（SOCKS5）/ 10809（HTTP）。可在“AI 翻译”页点击“测试并获取模型”检查连通性。" />
+                </StackPanel>
+            </TabItem>
+
+            <!-- ============================================================ Hotkeys -->
+            <TabItem Header="快捷键">
+                <StackPanel Margin="12">
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="截图" Style="{StaticResource SettingsLabel}" />
+                        <local:HotkeyBox x:Name="HotkeyCapture" Grid.Column="1" />
+                    </Grid>
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="截图并翻译" Style="{StaticResource SettingsLabel}" />
+                        <local:HotkeyBox x:Name="HotkeyTranslate" Grid.Column="1" />
+                    </Grid>
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="长截图" Style="{StaticResource SettingsLabel}" />
+                        <local:HotkeyBox x:Name="HotkeyLong" Grid.Column="1" />
+                    </Grid>
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="全屏截图到剪贴板" Style="{StaticResource SettingsLabel}" />
+                        <local:HotkeyBox x:Name="HotkeyFull" Grid.Column="1" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource HintText}" Margin="140,8,0,0" TextWrapping="Wrap"
+                               Text="点击输入框后直接按下组合键即可修改，Backspace 清除。若与其他软件（如 Snipaste 默认 F1）冲突会注册失败并提示。" />
+                    <TextBlock Style="{StaticResource HintText}" Margin="140,14,0,0" TextWrapping="Wrap">
+                        截图窗口内快捷键：Enter/双击 复制并完成 · Ctrl+S 保存 · Ctrl+T 翻译 · Ctrl+P 贴图 · Ctrl+Z/Y 撤销/重做 ·
+                        R 矩形 · E 椭圆 · A 箭头 · L 直线 · P 画笔 · H 荧光笔 · T 文字 · M 马赛克 · N 序号 · 方向键 微调 · C 复制颜色 · Esc 退出
+                    </TextBlock>
+                </StackPanel>
+            </TabItem>
+
+            <!-- ============================================================ Capture -->
+            <TabItem Header="截图">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="保存目录" Style="{StaticResource SettingsLabel}" />
+                            <TextBox x:Name="SaveDirBox" Grid.Column="1" Text="{Binding Capture.SaveDirectory}" />
+                            <Button Grid.Column="2" Content="浏览..." Margin="8,0,0,0" Padding="10,3" Click="OnBrowseSaveDir" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="文件名模板" Style="{StaticResource SettingsLabel}" />
+                            <TextBox Grid.Column="1" Text="{Binding Capture.FileNameTemplate}" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource HintText}" Margin="110,0,0,6" Text="{}{0:yyyyMMdd_HHmmss} 会替换为当前时间。" />
+
+                        <CheckBox Content="显示放大镜" IsChecked="{Binding Capture.ShowMagnifier}" />
+                        <CheckBox Content="自动识别窗口（单击即可选中窗口）" IsChecked="{Binding Capture.SnapToWindows}" />
+                        <CheckBox Content="保存后同时复制到剪贴板" IsChecked="{Binding Capture.CopyAfterSave}" />
+
+                        <GroupBox Header="HDR" Margin="0,10,0,10">
+                            <StackPanel>
+                                <CheckBox Content="在 HDR 显示器上截图时，额外自动保存 .jxr HDR 原图" IsChecked="{Binding Capture.AutoSaveHdr}" />
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="HDR → SDR 转换" Style="{StaticResource SettingsLabel}" />
+                                    <ComboBox x:Name="ToneMapBox" Grid.Column="1" DisplayMemberPath="Value" SelectedValuePath="Key"
+                                              SelectedValue="{Binding Capture.HdrToneMapping}" />
+                                </Grid>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="SDR 白点亮度" Style="{StaticResource SettingsLabel}" />
+                                    <TextBox Grid.Column="1" Text="{Binding Capture.HdrSdrWhiteNitsOverride}" />
+                                    <TextBlock Grid.Column="2" Text=" 尼特（0 = 读取 Windows 设置）" VerticalAlignment="Center" Foreground="#777" />
+                                </Grid>
+                                <TextBlock Style="{StaticResource HintText}" TextWrapping="Wrap"
+                                           Text="HDR 显示器上截图会自动使用 FP16 原始数据：复制/PNG/翻译使用转换后的 SDR 图像，.jxr 保留完整 HDR 亮度。" />
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="长截图">
+                            <StackPanel>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="自动滚动每次滚轮格数" Style="{StaticResource SettingsLabel}" />
+                                    <TextBox Grid.Column="1" Text="{Binding Capture.LongCaptureWheelNotches}" />
+                                </Grid>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="滚动后等待" Style="{StaticResource SettingsLabel}" />
+                                    <TextBox Grid.Column="1" Text="{Binding Capture.LongCaptureSettleMs}" />
+                                    <TextBlock Grid.Column="2" Text=" 毫秒（页面有平滑滚动/懒加载时调大）" VerticalAlignment="Center" Foreground="#777" />
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============================================================ Annotation -->
+            <TabItem Header="标注">
+                <StackPanel Margin="12">
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="默认颜色" Style="{StaticResource SettingsLabel}" />
+                        <TextBox Grid.Column="1" Text="{Binding Annotation.Color}" />
+                        <TextBlock Grid.Column="2" Text=" 例如 #FFE53935" VerticalAlignment="Center" Foreground="#777" />
+                    </Grid>
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="140" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="线条粗细" Style="{StaticResource SettingsLabel}" />
+                        <TextBox Grid.Column="1" Text="{Binding Annotation.StrokeWidth}" />
+                    </Grid>
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="140" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="文字字号" Style="{StaticResource SettingsLabel}" />
+                        <TextBox Grid.Column="1" Text="{Binding Annotation.FontSize}" />
+                    </Grid>
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="140" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="马赛克块大小" Style="{StaticResource SettingsLabel}" />
+                        <TextBox Grid.Column="1" Text="{Binding Annotation.MosaicBlockSize}" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource HintText}" Margin="110,6,0,0" Text="截图时在工具栏中修改的颜色/粗细会在本次运行期间保留。" />
+                </StackPanel>
+            </TabItem>
+
+            <!-- ============================================================ General -->
+            <TabItem Header="常规">
+                <StackPanel Margin="12">
+                    <CheckBox Content="开机自动启动" IsChecked="{Binding General.StartWithWindows}" />
+                    <CheckBox Content="显示托盘通知" IsChecked="{Binding General.ShowNotifications}" />
+                    <TextBlock x:Name="VersionText" Margin="0,20,0,0" Foreground="#555" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="打开设置文件夹" Padding="10,3" Click="OnOpenDataDir" Margin="0,0,8,0" />
+                        <Button Content="打开日志文件夹" Padding="10,3" Click="OnOpenLogDir" />
+                    </StackPanel>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

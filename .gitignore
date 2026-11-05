@@ -1,0 +1,21 @@
+## .NET
+bin/
+obj/
+publish/
+TestResults/
+*.user
+*.suo
+*.userprefs
+*.rsuser
+.vs/
+.idea/
+.vscode/
+*.swp
+*.DotSettings.user
+
+## OS
+Thumbs.db
+.DS_Store
+
+## Release archives
+AiPhoto-*.zip

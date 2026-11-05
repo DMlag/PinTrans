@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Allows building the Windows-only WPF project on Linux/macOS (CI checks, dev containers). -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <Product>AiPhoto</Product>
+    <Company>AiPhoto</Company>
+    <Copyright>Copyright © AiPhoto contributors</Copyright>
+    <Deterministic>true</Deterministic>
+    <!-- Embed PDBs so published single-file builds have no loose .pdb files but still give line numbers in logs. -->
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+</Project>
