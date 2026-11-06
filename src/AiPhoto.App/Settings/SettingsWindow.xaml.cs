@@ -154,13 +154,17 @@ public partial class SettingsWindow : Window
             ModelBox.ItemsSource = SuggestedModels.Concat(models.Where(m => m.Contains("gemini", StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(m => m)).Distinct().ToList();
             ModelBox.Text = current;
+            TestResult.Text = $"连接成功，可用模型 {models.Count} 个。正在测试模型“{current}”的调用额度…";
+
+            // Listing models works even without billing; a real call reveals quota/tier problems (429).
+            await translator.TestGenerateAsync();
             TestResult.Foreground = Brushes.SeaGreen;
-            TestResult.Text = $"连接成功，可用模型 {models.Count} 个（已加入下拉列表）。";
+            TestResult.Text = $"连接成功，模型“{current}”调用正常。可用模型 {models.Count} 个（已加入下拉列表）。";
         }
         catch (Exception ex)
         {
             TestResult.Foreground = Brushes.Firebrick;
-            TestResult.Text = "连接失败：" + ex.Message;
+            TestResult.Text = "测试失败：" + ex.Message;
         }
         finally
         {

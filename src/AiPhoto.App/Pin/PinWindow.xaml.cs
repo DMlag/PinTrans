@@ -35,6 +35,7 @@ public partial class PinWindow : Window
     private CancellationTokenSource? _cts;
     private bool _translating;
     private bool _hasError;
+    private string _lastError = "";
 
     public PinWindow(Bgra32Image image, PixelRect screenRect, IAppHost host, bool translate)
     {
@@ -235,13 +236,19 @@ public partial class PinWindow : Window
     {
         _translating = false;
         _hasError = true;
-        ShowStatus(message + "（点击重试，右键可打开设置）", spinning: false);
+        _lastError = message;
+        // The pin may be tiny: keep the pill short and show the full explanation on click.
+        var firstLine = message.Split('\n')[0];
+        if (firstLine.Length > 60) firstLine = firstLine[..60] + "…";
+        ShowStatus(firstLine + "（点击查看详情）", spinning: false);
         StatusPill.Background = new SolidColorBrush(Color.FromArgb(0xEE, 0xB7, 0x1C, 0x1C));
+        StatusPill.ToolTip = message;
     }
 
     private void ShowStatus(string text, bool spinning, bool autoHide = false)
     {
         StatusPill.Background = new SolidColorBrush(Color.FromArgb(0xE6, 0x20, 0x21, 0x24));
+        StatusPill.ToolTip = null;
         StatusText.Text = text;
         StatusPill.Visibility = Visibility.Visible;
         Spinner.Visibility = spinning ? Visibility.Visible : Visibility.Collapsed;
@@ -261,8 +268,21 @@ public partial class PinWindow : Window
     private void OnStatusClick(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
-        if (_hasError) _ = TranslateAsync();
-        else StatusPill.Visibility = Visibility.Collapsed;
+        if (!_hasError)
+        {
+            StatusPill.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        Topmost = false;
+        var choice = MessageBox.Show(this, _lastError + "\n\n是：重新翻译    否：打开设置    取消：关闭此提示",
+            "AiPhoto 翻译失败", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+        Topmost = true;
+        switch (choice)
+        {
+            case MessageBoxResult.Yes: _ = TranslateAsync(); break;
+            case MessageBoxResult.No: _host.OpenSettings(); break;
+        }
     }
 
     // ------------------------------------------------------------------ commands

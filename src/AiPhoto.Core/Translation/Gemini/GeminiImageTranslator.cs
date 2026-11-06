@@ -105,6 +105,35 @@ public sealed class GeminiImageTranslator : IImageTranslator
         return models;
     }
 
+    /// <summary>
+    /// Sends a tiny text-only request to the configured model to verify key, billing tier and quota
+    /// (listing models succeeds even when generation would fail with 429).
+    /// </summary>
+    public async Task TestGenerateAsync(CancellationToken cancellationToken = default)
+    {
+        var options = _options();
+        var url = $"{options.BaseUrl.TrimEnd('/')}/v1beta/models/{Uri.EscapeDataString(options.Model)}:generateContent";
+        var body = new JsonObject
+        {
+            ["contents"] = new JsonArray(new JsonObject
+            {
+                ["role"] = "user",
+                ["parts"] = new JsonArray(new JsonObject { ["text"] = "Reply with the single word OK." }),
+            }),
+        };
+        using var req = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
+        };
+        req.Headers.Add("x-goog-api-key", options.ApiKey);
+        using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var text = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw CreateApiException(resp.StatusCode, text);
+        }
+    }
+
     private async Task<HttpResponseMessage> SendWithFallbackAsync(TranslationRequest request, GeminiOptions options, CancellationToken ct)
     {
         // Not every model accepts every thinking level / media resolution. If the API rejects the
@@ -129,10 +158,30 @@ public sealed class GeminiImageTranslator : IImageTranslator
             body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         }
 
+        // 429: retry transient rate limits (per-minute quotas, shared capacity) a couple of times.
+        // Zero/daily/free-tier-exhausted quotas will not recover by waiting, so fail fast with guidance.
+        for (var attempt = 0; response.StatusCode == HttpStatusCode.TooManyRequests && attempt < MaxRateLimitRetries; attempt++)
+        {
+            var error = GeminiError.Parse(body);
+            if (error.HasZeroLimit || error.IsDailyLimit) break;
+            var delay = error.RetryDelay ?? TimeSpan.FromSeconds(attempt == 0 ? 2 : 5);
+            if (delay > MaxRateLimitWait) break;
+
+            response.Dispose();
+            await Task.Delay(delay + TimeSpan.FromMilliseconds(300), ct).ConfigureAwait(false);
+            var includeOptional = useOptional && !_rejectsOptionalConfig.ContainsKey(cacheKey);
+            response = await SendAsync(request, options, includeOptional, ct).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode) return response;
+            body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        }
+
         var status = response.StatusCode;
         response.Dispose();
         throw CreateApiException(status, body);
     }
+
+    private const int MaxRateLimitRetries = 2;
+    private static readonly TimeSpan MaxRateLimitWait = TimeSpan.FromSeconds(20);
 
     private async Task<HttpResponseMessage> SendAsync(TranslationRequest request, GeminiOptions options, bool includeOptionalConfig, CancellationToken ct)
     {
@@ -265,6 +314,17 @@ public sealed class GeminiImageTranslator : IImageTranslator
         catch (JsonException) { /* not JSON, e.g. an HTML error page from a proxy */ }
 
         message ??= body.Length > 300 ? body[..300] : body;
+
+        if (status == HttpStatusCode.TooManyRequests)
+        {
+            var error = GeminiError.Parse(body);
+            var original = message.Length > 300 ? message[..300] + "…" : message;
+            return new TranslationException($"Gemini API 错误 429：{error.DescribeQuotaProblem()}\n\n原始信息：{original}")
+            {
+                StatusCode = 429,
+            };
+        }
+
         var hint = status switch
         {
             HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => "（API Key 无效或没有权限）",
