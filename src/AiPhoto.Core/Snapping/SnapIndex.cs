@@ -8,7 +8,9 @@ namespace AiPhoto.Core.Snapping;
 /// </summary>
 public sealed class SnapIndex
 {
-    public const int MinCandidateSize = 6;
+    public const int MinCandidateSize = 14;
+    public const int MinChildWidth = 36;
+    public const int MinTextWidth = 60;
     public const int DedupeTolerancePixels = 3;
 
     private readonly object _gate = new();
@@ -57,8 +59,7 @@ public sealed class SnapIndex
                 foreach (var child in childHwnds)
                 {
                     var cr = child.Rect.Intersect(clipped);
-                    if (cr.Width < MinCandidateSize || cr.Height < MinCandidateSize) continue;
-                    if (AreNearlyEqual(cr, clipped)) continue;
+                    if (!IsValidChildCandidate(cr, child.Kind) || AreNearlyEqual(cr, clipped)) continue;
                     list.Add(child with { Rect = cr, WindowIndex = index });
                 }
                 if (list.Count > 0) _childHwndsByWindow[index] = list;
@@ -80,8 +81,7 @@ public sealed class SnapIndex
             foreach (var c in candidates)
             {
                 var cr = c.Rect.Intersect(winRect);
-                if (cr.Width < MinCandidateSize || cr.Height < MinCandidateSize) continue;
-                if (AreNearlyEqual(cr, winRect)) continue;
+                if (!IsValidChildCandidate(cr, c.Kind) || AreNearlyEqual(cr, winRect)) continue;
                 list.Add(c with { Rect = cr, WindowIndex = windowIndex, Source = SnapSource.UiAutomation });
             }
             _uiaByWindow[windowIndex] = list;
@@ -162,7 +162,7 @@ public sealed class SnapIndex
                     foreach (var extra in extraCandidates)
                     {
                         var cr = extra.Rect.Intersect(win.Rect);
-                        if (cr.Width >= MinCandidateSize && cr.Height >= MinCandidateSize &&
+                        if (IsValidChildCandidate(cr, extra.Kind) &&
                             cr.Contains(x, y) && !AreNearlyEqual(cr, win.Rect))
                         {
                             raw.Add(extra with { Rect = cr, WindowIndex = topWin });
@@ -184,7 +184,7 @@ public sealed class SnapIndex
                 foreach (var extra in extraCandidates)
                 {
                     var cr = extra.Rect.Intersect(CanvasBounds);
-                    if (cr.Width >= MinCandidateSize && cr.Height >= MinCandidateSize && cr.Contains(x, y))
+                    if (IsValidChildCandidate(cr, extra.Kind) && cr.Contains(x, y))
                     {
                         raw.Add(extra with { Rect = cr });
                     }
@@ -252,6 +252,19 @@ public sealed class SnapIndex
         if (a.Depth != b.Depth) return a.Depth > b.Depth ? a : b;
         if (!string.IsNullOrWhiteSpace(b.Label) && string.IsNullOrWhiteSpace(a.Label)) return b;
         return a;
+    }
+
+    public static bool IsValidChildCandidate(PixelRect r, SnapKind kind)
+    {
+        if (r.Width < MinChildWidth || r.Height < MinCandidateSize) return false;
+        if ((long)r.Width * r.Height < 700) return false;
+        // Reject single-character or 2-3 character text fragments and vertical 2-character strips ("上下两个字").
+        if (kind == SnapKind.TextBlock)
+        {
+            if (r.Width < MinTextWidth) return false;
+            if (r.Width < 90 && r.Height > r.Width) return false;
+        }
+        return true;
     }
 
     public static bool AreNearlyEqual(PixelRect a, PixelRect b, int tolerance = DedupeTolerancePixels)

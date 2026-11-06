@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -53,6 +54,9 @@ public partial class CaptureWindow : Window
     private Phase _phase = Phase.Hover;
     private Rect? _selection;
     private Rect? _hoverRect;
+    private Rect? _displayedHoverRect;
+    private bool _hoverAnimating;
+    private long _lastAnimTick;
     private IReadOnlyList<SnapCandidate> _hoverCandidates = [];
     private int _hoverLevel;
     private bool _manualLevelOverride;
@@ -159,6 +163,7 @@ public partial class CaptureWindow : Window
         Closing += (_, _) =>
         {
             _closing = true;
+            StopHoverAnimation();
             _uiaProvider?.Dispose();
         };
     }
@@ -332,6 +337,7 @@ public partial class CaptureWindow : Window
             case Phase.Dragging:
                 if (Math.Abs(p.X - _dragStart.X) >= 3 || Math.Abs(p.Y - _dragStart.Y) >= 3 || _selection is not null)
                 {
+                    StopHoverAnimation();
                     _selection = new Rect(_dragStart, p);
                     Adorner.Selection = _selection;
                     Adorner.Hover = null;
@@ -466,6 +472,7 @@ public partial class CaptureWindow : Window
     {
         r = Rect.Intersect(r, new Rect(0, 0, Backdrop.Width, Backdrop.Height));
         if (r.IsEmpty) return;
+        StopHoverAnimation();
         _selectionFromSnap = fromSnap;
         _selection = new Rect(Math.Round(r.X), Math.Round(r.Y), Math.Round(r.Width), Math.Round(r.Height));
         Adorner.Selection = _selection;
@@ -520,7 +527,7 @@ public partial class CaptureWindow : Window
             var topWin = _snapIndex.TopWindowIndexAt(px, py);
             if (topWin >= 0) _uiaProvider?.PrioritizeWindow(topWin);
 
-            if (Math.Abs(px - _lastEdgePoint.X) >= 2 || Math.Abs(py - _lastEdgePoint.Y) >= 2 || _cachedEdgeCandidates is null)
+            if (Math.Abs(px - _lastEdgePoint.X) >= 4 || Math.Abs(py - _lastEdgePoint.Y) >= 4 || _cachedEdgeCandidates is null)
             {
                 _lastEdgePoint = (px, py);
                 var clip = topWin >= 0 ? _snapIndex.GetWindowRect(topWin) : _snapIndex.CanvasBounds;
@@ -534,10 +541,11 @@ public partial class CaptureWindow : Window
             : default;
 
         _hoverCandidates = _snapIndex.Query(px, py, edgeCandidates);
+        Rect? targetHover;
         if (_hoverCandidates.Count == 0)
         {
             _hoverLevel = 0;
-            _hoverRect = null;
+            targetHover = null;
         }
         else
         {
@@ -554,13 +562,100 @@ public partial class CaptureWindow : Window
             {
                 _hoverLevel = 0;
             }
-            _hoverRect = _hoverCandidates[_hoverLevel].Rect.ToRect();
+            targetHover = _hoverCandidates[_hoverLevel].Rect.ToRect();
         }
 
-        Adorner.Hover = _hoverRect;
-        Adorner.InvalidateVisual();
-        UpdateSizeLabel();
+        SetHoverTarget(targetHover);
     }
+
+    private void SetHoverTarget(Rect? target)
+    {
+        _hoverRect = target;
+        if (target is null)
+        {
+            _displayedHoverRect = null;
+            StopHoverAnimation();
+            Adorner.Hover = null;
+            Adorner.InvalidateVisual();
+            UpdateSizeLabel();
+            return;
+        }
+
+        if (_displayedHoverRect is not { } cur)
+        {
+            _displayedHoverRect = target;
+            Adorner.Hover = _displayedHoverRect;
+            Adorner.InvalidateVisual();
+            UpdateSizeLabel();
+            return;
+        }
+
+        if (IsRectClose(cur, target.Value))
+        {
+            _displayedHoverRect = target;
+            StopHoverAnimation();
+            Adorner.Hover = _displayedHoverRect;
+            Adorner.InvalidateVisual();
+            UpdateSizeLabel();
+            return;
+        }
+
+        UpdateSizeLabel();
+        if (!_hoverAnimating)
+        {
+            _hoverAnimating = true;
+            _lastAnimTick = Stopwatch.GetTimestamp();
+            CompositionTarget.Rendering += OnHoverAnimationFrame;
+        }
+    }
+
+    private void StopHoverAnimation()
+    {
+        if (!_hoverAnimating) return;
+        _hoverAnimating = false;
+        CompositionTarget.Rendering -= OnHoverAnimationFrame;
+    }
+
+    private void OnHoverAnimationFrame(object? sender, EventArgs e)
+    {
+        if (_closing || _phase != Phase.Hover || _hoverRect is not { } target || _displayedHoverRect is not { } cur)
+        {
+            StopHoverAnimation();
+            return;
+        }
+
+        var now = Stopwatch.GetTimestamp();
+        var dt = Math.Clamp((double)(now - _lastAnimTick) / Stopwatch.Frequency, 0.001, 0.05);
+        _lastAnimTick = now;
+
+        // Frame-rate-independent exponential smoothing (~28/s decay rate -> smooth 60/120/144/240Hz glide).
+        var factor = 1.0 - Math.Exp(-dt * 28.0);
+        var l = cur.Left + (target.Left - cur.Left) * factor;
+        var t = cur.Top + (target.Top - cur.Top) * factor;
+        var r = cur.Right + (target.Right - cur.Right) * factor;
+        var b = cur.Bottom + (target.Bottom - cur.Bottom) * factor;
+        var next = new Rect(new Point(Math.Min(l, r), Math.Min(t, b)), new Point(Math.Max(l, r), Math.Max(t, b)));
+
+        if (IsRectClose(next, target))
+        {
+            _displayedHoverRect = target;
+            StopHoverAnimation();
+        }
+        else
+        {
+            _displayedHoverRect = next;
+        }
+
+        Adorner.Hover = _displayedHoverRect;
+        Adorner.InvalidateVisual();
+        UpdateSizeLabelPosition(_displayedHoverRect.Value);
+    }
+
+    private static bool IsRectClose(Rect a, Rect b) =>
+        Math.Abs(a.Left - b.Left) < 0.6 &&
+        Math.Abs(a.Top - b.Top) < 0.6 &&
+        Math.Abs(a.Right - b.Right) < 0.6 &&
+        Math.Abs(a.Bottom - b.Bottom) < 0.6;
 
     /// <summary>
     /// Steps up (<c>+1</c> = parent/outer region) or down (<c>-1</c> = child/inner region) in the snap hierarchy stack.
@@ -575,10 +670,7 @@ public partial class CaptureWindow : Window
             _hoverLevel = Math.Clamp(_hoverLevel + delta, 0, _hoverCandidates.Count - 1);
             _manualLevelOverride = true;
             _manualLevelAnchor = _lastMouse;
-            _hoverRect = _hoverCandidates[_hoverLevel].Rect.ToRect();
-            Adorner.Hover = _hoverRect;
-            Adorner.InvalidateVisual();
-            UpdateSizeLabel();
+            SetHoverTarget(_hoverCandidates[_hoverLevel].Rect.ToRect());
             return true;
         }
 
@@ -676,7 +768,7 @@ public partial class CaptureWindow : Window
 
     private void UpdateSizeLabel()
     {
-        Rect target;
+        Rect anchor;
         string text;
 
         if (_phase == Phase.Hover)
@@ -686,7 +778,7 @@ public partial class CaptureWindow : Window
                 SizeLabel.Visibility = Visibility.Collapsed;
                 return;
             }
-            target = hr;
+            anchor = _displayedHoverRect ?? hr;
             var cand = _hoverCandidates[Math.Clamp(_hoverLevel, 0, _hoverCandidates.Count - 1)];
             text = _hoverCandidates.Count > 1
                 ? $"{cand.DisplayLabel}  {(int)hr.Width} × {(int)hr.Height}  ({_hoverLevel + 1}/{_hoverCandidates.Count} · 滚轮/Tab 切换)"
@@ -694,7 +786,7 @@ public partial class CaptureWindow : Window
         }
         else if (_selection is { } s)
         {
-            target = s;
+            anchor = s;
             if (_selectionFromSnap && _hoverCandidates.Count > 0 && _hoverLevel < _hoverCandidates.Count)
             {
                 var cand = _hoverCandidates[_hoverLevel];
@@ -716,8 +808,14 @@ public partial class CaptureWindow : Window
         SizeText.Text = text;
         SizeLabel.Visibility = Visibility.Visible;
         SizeLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var ui = ToUi(target.TopLeft);
-        var monitor = MonitorUiBounds(target.TopLeft);
+        UpdateSizeLabelPosition(anchor);
+    }
+
+    private void UpdateSizeLabelPosition(Rect anchor)
+    {
+        if (SizeLabel.Visibility != Visibility.Visible) return;
+        var ui = ToUi(anchor.TopLeft);
+        var monitor = MonitorUiBounds(anchor.TopLeft);
         var left = Math.Clamp(ui.X, monitor.Left + 4, Math.Max(monitor.Left + 4, monitor.Right - SizeLabel.DesiredSize.Width - 4));
         var top = ui.Y - SizeLabel.DesiredSize.Height - 4;
         Canvas.SetLeft(SizeLabel, left);

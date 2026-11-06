@@ -62,6 +62,49 @@ public sealed class EdgeRectDetectorTests
         Assert.Empty(candidates);
     }
 
+    [Fact]
+    public void DetectAroundPoint_LongTextLine_ReturnsFullLineFromBothLineStartAndLineEnd()
+    {
+        var img = new Bgra32Image(1200, 220);
+        FillRect(img, img.Bounds, new Bgra32(255, 255, 255));
+        var ink = new Bgra32(28, 28, 28);
+
+        // Start of line has a short character (like '一' or '-') at x=80..98, y=104..108,
+        // followed by a long 820px line of normal height (16px) at x=104..900, y=98..114,
+        // including punctuation gaps of ~18px near the end of the line.
+        DrawSimulatedTextLine(img, x0: 80, x1: 98, y0: 104, height: 5, ink);
+        DrawSimulatedTextLine(img, x0: 104, x1: 760, y0: 98, height: 16, ink);
+        // 18px punctuation/word gap at x=760..778, then trailing characters at x=778..900
+        DrawSimulatedTextLine(img, x0: 778, x1: 900, y0: 98, height: 16, ink);
+
+        var fromStart = EdgeRectDetector.DetectAroundPoint(img, 88, 106, img.Bounds)
+            .FirstOrDefault(c => c.Label == "文本行");
+        var fromEnd = EdgeRectDetector.DetectAroundPoint(img, 885, 106, img.Bounds)
+            .FirstOrDefault(c => c.Label == "文本行");
+
+        Assert.False(fromStart.Rect.IsEmpty);
+        Assert.False(fromEnd.Rect.IsEmpty);
+        // Hovering at line start must include the trailing characters up to ~900, matching line end.
+        Assert.InRange(fromStart.Rect.X, 72, 84);
+        Assert.InRange(fromStart.Rect.Right, 895, 912);
+        Assert.True(SnapIndex.AreNearlyEqual(fromStart.Rect, fromEnd.Rect, tolerance: 4));
+    }
+
+    [Fact]
+    public void DetectAroundPoint_RejectsSingleCharacterAndVerticalTwoCharFragments()
+    {
+        var img = new Bgra32Image(400, 300);
+        FillRect(img, img.Bounds, new Bgra32(255, 255, 255));
+        var ink = new Bgra32(25, 25, 25);
+
+        // Draw two vertically stacked single characters ("上下两个字"), each ~18x16px
+        DrawSimulatedTextLine(img, x0: 150, x1: 168, y0: 90, height: 16, ink);
+        DrawSimulatedTextLine(img, x0: 150, x1: 168, y0: 114, height: 16, ink);
+
+        var candidates = EdgeRectDetector.DetectAroundPoint(img, 158, 98, img.Bounds);
+        Assert.DoesNotContain(candidates, c => c.Rect.Width < 50);
+    }
+
     private static void FillRect(Bgra32Image img, PixelRect rect, Bgra32 color)
     {
         var r = rect.Intersect(img.Bounds);
