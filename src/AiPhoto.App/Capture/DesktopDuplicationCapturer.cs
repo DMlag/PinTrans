@@ -43,7 +43,15 @@ public sealed class DesktopDuplicationCapturer : IDisposable
         foreach (var output in _outputs)
         {
             var frame = output.Read(PixelRect.FromLTRB(0, 0, output.Bounds.Width, output.Bounds.Height), ensureFresh: true);
-            if (frame is null) continue;
+            if (frame is null || IsBlank(frame.Value))
+            {
+                // A freshly created duplication sometimes hands out an all-black surface that was never
+                // presented (static desktop, some drivers). GDI always sees the current desktop (SDR only).
+                Diagnostics.Log.Warn($"Desktop duplication returned {(frame is null ? "no" : "a black")} frame for {output.DeviceName} " +
+                                     $"(presented={output.LastFramePresented}); using GDI for this monitor.");
+                monitors.Add(new MonitorCapture { Bounds = output.Bounds, DeviceName = output.DeviceName, Sdr = GdiCapturer.Capture(output.Bounds) });
+                continue;
+            }
             monitors.Add(BuildMonitorCapture(output, frame.Value, mapping, whiteLevels));
         }
 
@@ -64,6 +72,7 @@ public sealed class DesktopDuplicationCapturer : IDisposable
         var local = screenRect.Offset(-output.Bounds.X, -output.Bounds.Y).Intersect(new PixelRect(0, 0, output.Bounds.Width, output.Bounds.Height));
         var frame = output.Read(local, ensureFresh: false);
         if (frame is null) return null;
+        if (!output.LastFramePresented && IsBlank(frame.Value)) return GdiCapturer.Capture(screenRect);
 
         if (frame.Value.Hdr is { } hdr)
         {
@@ -73,6 +82,36 @@ public sealed class DesktopDuplicationCapturer : IDisposable
             return ToneMapper.ToSdr(hdr, new ToneMapOptions { SdrWhiteNits = white, PeakNits = output.PeakNits, Operator = mapping.Operator });
         }
         return frame.Value.Sdr;
+    }
+
+    /// <summary>True if every sampled pixel is pure black (an unpresented duplication surface).</summary>
+    private static bool IsBlank(RawFrame frame)
+    {
+        if (frame.Sdr is { } sdr)
+        {
+            var stepX = Math.Max(1, sdr.Width / 64);
+            var stepY = Math.Max(1, sdr.Height / 64);
+            for (var y = 0; y < sdr.Height; y += stepY)
+            for (var x = 0; x < sdr.Width; x += stepX)
+            {
+                var c = sdr.GetPixel(x, y);
+                if (c.R != 0 || c.G != 0 || c.B != 0) return false;
+            }
+            return true;
+        }
+        if (frame.Hdr is { } hdr)
+        {
+            var stepX = Math.Max(1, hdr.Width / 64);
+            var stepY = Math.Max(1, hdr.Height / 64);
+            for (var y = 0; y < hdr.Height; y += stepY)
+            for (var x = 0; x < hdr.Width; x += stepX)
+            {
+                var i = (y * hdr.Width + x) * 4;
+                if ((float)hdr.Pixels[i] > 0f || (float)hdr.Pixels[i + 1] > 0f || (float)hdr.Pixels[i + 2] > 0f) return false;
+            }
+            return true;
+        }
+        return true;
     }
 
     private static MonitorCapture BuildMonitorCapture(OutputDuplicator output, RawFrame frame, CaptureToneMapping mapping, Dictionary<string, float> whiteLevels)
@@ -156,6 +195,9 @@ public sealed class DesktopDuplicationCapturer : IDisposable
         private Format _format;
         private ModeRotation _rotation;
         private bool _hasFrame;
+
+        /// <summary>False while the cached copy comes from a frame that DWM never presented (may be black).</summary>
+        public bool LastFramePresented { get; private set; }
 
         public OutputDuplicator(IDXGIOutput output, ID3D11Device device, ID3D11DeviceContext context)
         {
@@ -250,7 +292,9 @@ public sealed class DesktopDuplicationCapturer : IDisposable
                     try { CreateDuplication(); } catch (SharpGen.Runtime.SharpGenException) { return false; }
                 }
 
-                var hr = _duplication!.AcquireNextFrame((uint)(_hasFrame ? Math.Min(timeoutMs, 30) : timeoutMs), out var info, out var resource);
+                // Waiting a little longer when the cached frame was never presented gives DWM the chance to deliver a real one.
+                var wait = !_hasFrame ? timeoutMs : LastFramePresented ? Math.Min(timeoutMs, 30) : Math.Min(timeoutMs, 200);
+                var hr = _duplication!.AcquireNextFrame((uint)wait, out var info, out var resource);
                 if (hr.Code == DxgiErrorWaitTimeout)
                 {
                     // No new frame: the cached copy is still the current desktop image.
@@ -278,6 +322,7 @@ public sealed class DesktopDuplicationCapturer : IDisposable
                     if (info.LastPresentTime != 0 || !_hasFrame)
                     {
                         firstFrameWithoutPresent = !_hasFrame && info.LastPresentTime == 0;
+                        LastFramePresented = info.LastPresentTime != 0;
                         using var texture = resource!.QueryInterface<ID3D11Texture2D>();
                         EnsureStaging(texture.Description);
                         _context.CopyResource(_staging!, texture);
