@@ -1,0 +1,62 @@
+AiPhoto Open-Source Non-Commercial & ShareAlike License
+AiPhoto 开源非商用及相同方式共享许可协议 (GPL-3.0 Copyleft + Non-Commercial Restriction / CC BY-NC-SA 4.0)
+
+Copyright (c) 2026 DMlag (https://github.com/DMlag/aiphoto)
+All rights reserved under the terms below.
+
+================================================================================
+一、 中文核心条款（Chinese Summary & Binding Terms）
+================================================================================
+
+本软件（AiPhoto）及其源代码基于【强制衍生开源（Copyleft / ShareAlike）+ 严禁商业用途（Non-Commercial）】原则公开。任何获取、使用、复制、修改或分发本软件及源代码的个人或组织，均视为完全同意并受以下条款约束：
+
+1. 允许自由使用与学习（Personal & Non-Commercial Use）
+   您可以免费下载、安装、使用本软件，或阅读、复刻（Fork）、修改本项目的源代码，但仅限于个人学习、学术研究或非商业性质的公益交流。
+
+2. 强制衍生开源（相同方式共享 / Copyleft & ShareAlike）
+   如果您对本软件或源代码进行了任何修改、扩展、二次开发或重新编译，并向第三方公开发布或分发（无论是以源码形式还是可执行程序/安装包形式）：
+   - 您【必须】同时免费、完整地公开修改后的全部源代码；
+   - 您的衍生作品【必须】继续沿用本许可协议（即同样要求后续衍生版本开源且禁止商用），不得将衍生作品转为闭源或更换为允许商用的协议。
+
+3. 严禁任何商业用途（Strict Non-Commercial Restriction）
+   未经原作者（DMlag）事先书面授权，严禁将本软件、源代码或其任何修改/衍生版本用于任何商业用途或变相盈利活动，包括但不限于：
+   - 在淘宝、闲鱼、拼多多、咸鱼等任何电商、社交或二手平台上直接或间接售卖本软件、安装包、源码、教程或所谓“代安装/激活服务”；
+   - 将本软件抹去原作者信息后“套壳”、“换皮”包装为收费软件、会员软件、内购软件或含广告盈利的软件；
+   - 将本软件作为付费社群、付费网盘、公众号裂变引流、付费课程的搭售品或引流工具；
+   - 将本软件或核心代码集成至商业公司对外销售的产品、商业 SaaS 服务或以盈利为目的的企业商业系统中。
+
+4. 保留署名与许可声明（Attribution）
+   在任何复制、修改或衍生分发中，必须完整保留本 LICENSE 文件、版权声明、原作者署名（DMlag）及原项目仓库链接（https://github.com/DMlag/aiphoto），不得篡改或隐藏。
+
+5. 免责声明（Disclaimer of Warranty）
+   本软件按“原样（AS IS）”提供，不附带任何明示或暗示的担保（包括但不限于适销性、特定用途适用性及不侵权担保）。在任何情况下，作者均不对因使用或无法使用本软件而产生的任何直接、间接、偶然或后果性损害承担责任。
+
+================================================================================
+II. English Binding Terms (Non-Commercial & Copyleft ShareAlike License)
+================================================================================
+
+This work ("AiPhoto", including its source code, binaries, documentation, and associated files) is licensed under the GNU General Public License v3.0 (GPL-3.0) with an explicit Additional Non-Commercial Restriction, and concurrently under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0). In the event of any conflict regarding commercial rights, the Non-Commercial Restriction below prevails.
+
+1. Grant of Non-Commercial License
+   Subject to the terms and conditions of this License, the Copyright Holder (DMlag) hereby grants you a worldwide, royalty-free, non-exclusive license to use, reproduce, modify, and distribute this software and its source code SOLELY for non-commercial, personal, educational, or academic research purposes.
+
+2. Copyleft / ShareAlike Requirement (Derivative Works Must Be Open-Source)
+   If you distribute, publish, or otherwise make available any modified version, binary build, or derivative work of this software:
+   (a) You MUST make the complete, corresponding machine-readable source code of the entire derivative work publicly and freely available; and
+   (b) You MUST license the entire derivative work under the exact same terms of this License (preserving both the open-source Copyleft requirement and the Non-Commercial restriction). You may not re-license derivative works under proprietary or commercial-permissive terms.
+
+3. Strict Prohibition of Commercial Use
+   Without prior written permission from the Copyright Holder (DMlag), you may NOT use, sell, rent, lease, monetize, or distribute this software or any derivative work for any commercial purpose or monetary compensation. Prohibited commercial uses include, without limitation:
+   (a) Selling the software, compiled binaries, installers, or source code on any marketplace or platform;
+   (b) Rebranding ("reskinning") the software to charge users via subscriptions, activation codes, paywalls, or advertisements;
+   (c) Bundling the software with paid products, paid courses, or paid membership communities;
+   (d) Incorporating the software or its source code into commercial products or for-profit enterprise services.
+
+4. Attribution
+   You must retain all copyright, patent, trademark, and attribution notices, as well as a copy of this License and a visible link to the original repository (https://github.com/DMlag/aiphoto), in all copies and derivative works.
+
+5. Disclaimer of Warranty and Limitation of Liability
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+For full reference to Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International:
+https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode
