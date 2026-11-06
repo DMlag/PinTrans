@@ -105,6 +105,66 @@ public sealed class EdgeRectDetectorTests
         Assert.DoesNotContain(candidates, c => c.Rect.Width < 50);
     }
 
+    [Fact]
+    public void DetectAroundPoint_FindsRoundedCornerButton()
+    {
+        var img = new Bgra32Image(400, 260);
+        var bg = new Bgra32(242, 242, 245);
+        FillRect(img, img.Bounds, bg);
+
+        // Draw a modern rounded-corner button at (100, 80, 160, 44) with corner radius = 10px
+        var buttonRect = new PixelRect(100, 80, 160, 44);
+        FillRoundedRect(img, buttonRect, radius: 10, new Bgra32(235, 100, 36));
+
+        var candidates = EdgeRectDetector.DetectAroundPoint(img, 180, 102, img.Bounds);
+        Assert.Contains(candidates, c => c.Kind == SnapKind.VisualBox && SnapIndex.AreNearlyEqual(c.Rect, buttonRect, tolerance: 4));
+    }
+
+    [Fact]
+    public void DetectAroundPoint_TwoColumnText_DoesNotMergeRightColumnIntoLeftParagraph()
+    {
+        var img = new Bgra32Image(600, 260);
+        FillRect(img, img.Bounds, new Bgra32(255, 255, 255));
+        var ink = new Bgra32(30, 30, 30);
+
+        // Left column at x=40..180, lines at y=60 and y=86
+        DrawSimulatedTextLine(img, x0: 40, x1: 180, y0: 60, height: 14, ink);
+        DrawSimulatedTextLine(img, x0: 40, x1: 170, y0: 86, height: 14, ink);
+
+        // Right column at x=280..460, lines at y=60 and y=86
+        DrawSimulatedTextLine(img, x0: 280, x1: 460, y0: 60, height: 14, ink);
+        DrawSimulatedTextLine(img, x0: 280, x1: 450, y0: 86, height: 14, ink);
+
+        var leftCandidates = EdgeRectDetector.DetectAroundPoint(img, 100, 66, img.Bounds);
+        var leftBlock = leftCandidates.FirstOrDefault(c => c.Label == "文本块");
+
+        Assert.False(leftBlock.Rect.IsEmpty);
+        Assert.InRange(leftBlock.Rect.X, 32, 46);
+        Assert.InRange(leftBlock.Rect.Right, 174, 192);
+    }
+
+    private static void FillRoundedRect(Bgra32Image img, PixelRect rect, int radius, Bgra32 color)
+    {
+        for (var y = rect.Y; y < rect.Bottom; y++)
+        {
+            for (var x = rect.X; x < rect.Right; x++)
+            {
+                var dx = 0;
+                if (x < rect.X + radius) dx = rect.X + radius - x;
+                else if (x >= rect.Right - radius) dx = x - (rect.Right - radius - 1);
+
+                var dy = 0;
+                if (y < rect.Y + radius) dy = rect.Y + radius - y;
+                else if (y >= rect.Bottom - radius) dy = y - (rect.Bottom - radius - 1);
+
+                if (dx * dx + dy * dy <= radius * radius)
+                {
+                    img.SetPixel(x, y, color);
+                }
+            }
+        }
+    }
+
     private static void FillRect(Bgra32Image img, PixelRect rect, Bgra32 color)
     {
         var r = rect.Intersect(img.Bounds);

@@ -204,6 +204,10 @@ public static class UninstallHelper
             var exeDir = lastSep > 0 ? exePath[..lastSep] : null;
             if (!string.IsNullOrWhiteSpace(exeDir) && !exeDir.EndsWith(':'))
             {
+                var bundledModelsDir = exeDir + @"\models\ppocrv4";
+                var bundledModelsParent = exeDir + @"\models";
+                commands.Add($"if exist \"{bundledModelsDir}\" rmdir /s /q \"{bundledModelsDir}\" >nul 2>&1");
+                commands.Add($"rmdir \"{bundledModelsParent}\" >nul 2>&1");
                 // rmdir without /s only removes the folder if it is completely empty.
                 commands.Add($"rmdir \"{exeDir}\" >nul 2>&1");
             }

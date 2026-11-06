@@ -125,9 +125,13 @@ public partial class CaptureWindow : Window
         {
             _snapIndex.AddMonitor(m.Bounds.Offset(-vb.X, -vb.Y), "全屏");
         }
-        if (_snapMode == SnapMode.Smart && uiaTargets.Count > 0)
+        if (_snapMode == SnapMode.Smart)
         {
-            _uiaProvider = new UiaSnapProvider(uiaTargets, vb.X, vb.Y, _snapIndex, OnUiaWindowPopulated);
+            _ = Task.Run(() => EdgeRectDetector.Prewarm(snapshot.Composite));
+            if (uiaTargets.Count > 0)
+            {
+                _uiaProvider = new UiaSnapProvider(uiaTargets, vb.X, vb.Y, _snapIndex, OnUiaWindowPopulated);
+            }
         }
 
         Backdrop.Source = snapshot.Composite.ToBitmapSource();

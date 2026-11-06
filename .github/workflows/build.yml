@@ -52,12 +52,21 @@ jobs:
           name: test-results
           path: TestResults
 
+      - name: Download PP-OCRv4 ONNX models
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "models/ppocrv4" | Out-Null
+          Invoke-WebRequest -Uri "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv4/ch_PP-OCRv4_det_infer.onnx" -OutFile "models/ppocrv4/ch_PP-OCRv4_det_infer.onnx"
+          Invoke-WebRequest -Uri "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx" -OutFile "models/ppocrv4/ch_PP-OCRv4_rec_infer.onnx"
+
       - name: Publish (single-file, self-contained)
         shell: pwsh
         run: |
           foreach ($rid in 'win-x64', 'win-arm64') {
             dotnet publish src/AiPhoto.App/AiPhoto.App.csproj -c Release -r $rid -o "publish/$rid" `
               -p:Version=${{ steps.version.outputs.version }}
+            New-Item -ItemType Directory -Force -Path "publish/$rid/models/ppocrv4" | Out-Null
+            Copy-Item "models/ppocrv4/*.onnx" -Destination "publish/$rid/models/ppocrv4/" -Force
             Compress-Archive -Path "publish/$rid/*" -DestinationPath "PinTrans-${{ steps.version.outputs.version }}-$rid.zip"
           }
 

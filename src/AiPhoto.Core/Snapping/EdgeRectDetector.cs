@@ -1,10 +1,16 @@
+using System.Runtime.CompilerServices;
 using AiPhoto.Core.Imaging;
 
 namespace AiPhoto.Core.Snapping;
 
 /// <summary>
-/// Pure C# computer-vision detector that finds visual boxes (buttons, inputs, cards, images, panels)
-/// and full text lines / paragraphs around a cursor point directly from the frozen <see cref="Bgra32Image"/> screenshot.
+/// Pure C# computer-vision detector that finds visual boxes (buttons, inputs, cards, images, panels, including
+/// modern rounded-corner controls) and full text lines / paragraphs around a cursor point directly from the
+/// frozen <see cref="Bgra32Image"/> screenshot.
+/// <para>
+/// Uses a per-screenshot precomputed <see cref="EdgeSnapContext"/> with 1D/2D integral prefix tables so edge
+/// continuity queries run in <c>O(1)</c> time per edge instead of rescanning pixels on every mouse move.
+/// </para>
 /// </summary>
 public static class EdgeRectDetector
 {
@@ -21,6 +27,20 @@ public static class EdgeRectDetector
     // Minimum width for a standalone snapped text line (~4+ Chinese characters or a real phrase/sentence).
     private const int MinTextLineWidth = 68;
 
+    private static readonly ConditionalWeakTable<Bgra32Image, EdgeSnapContext> ContextCache = new();
+
+    /// <summary>
+    /// Precomputes the integral edge and stroke tables for <paramref name="image"/> so subsequent hover queries are instantaneous.
+    /// </summary>
+    public static void Prewarm(Bgra32Image image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        _ = GetOrCreateContext(image);
+    }
+
+    private static EdgeSnapContext GetOrCreateContext(Bgra32Image image)
+        => ContextCache.GetValue(image, static img => new EdgeSnapContext(img));
+
     /// <summary>
     /// Detects snappable text lines/paragraphs and visual boxes containing <c>(x, y)</c> within <paramref name="clipBounds"/>.
     /// </summary>
@@ -29,6 +49,7 @@ public static class EdgeRectDetector
         var bounds = clipBounds.IsEmpty ? image.Bounds : clipBounds.Intersect(image.Bounds);
         if (!bounds.Contains(x, y) || bounds.Width < MinBoxWidth || bounds.Height < MinBoxHeight) return [];
 
+        var ctx = GetOrCreateContext(image);
         var results = new List<SnapCandidate>(6);
 
         var textRoi = PixelRect.FromLTRB(
@@ -37,7 +58,7 @@ public static class EdgeRectDetector
             Math.Min(bounds.Right, x + MaxTextSearchRadiusX),
             Math.Min(bounds.Bottom, y + MaxTextSearchRadiusY));
 
-        var detectedTextRect = DetectTextRegions(image, x, y, textRoi, results);
+        var detectedTextRect = DetectTextRegions(ctx, x, y, textRoi, results);
 
         var boxRoi = PixelRect.FromLTRB(
             Math.Max(bounds.X, x - MaxBoxSearchRadiusX),
@@ -45,20 +66,142 @@ public static class EdgeRectDetector
             Math.Min(bounds.Right, x + MaxBoxSearchRadiusX),
             Math.Min(bounds.Bottom, y + MaxBoxSearchRadiusY));
 
-        DetectVisualBoxes(image, x, y, boxRoi, detectedTextRect, results);
+        DetectVisualBoxes(ctx, x, y, boxRoi, detectedTextRect, results);
 
         return results;
+    }
+
+    // ------------------------------------------------------------------ precomputed integral context
+
+    private sealed class EdgeSnapContext
+    {
+        public readonly Bgra32Image Image;
+        public readonly int Width;
+        public readonly int Height;
+
+        /// <summary>
+        /// Row-wise prefix sums of horizontal boundary pixels: <c>HorizEdgeRowPrefix[y * (Width + 1) + x]</c>.
+        /// Allows <c>O(1)</c> exact evaluation of horizontal edge continuity over any segment <c>[x0, x1]</c>.
+        /// </summary>
+        public readonly int[] HorizEdgeRowPrefix;
+
+        /// <summary>
+        /// Column-wise prefix sums of vertical boundary pixels: <c>VertEdgeColPrefix[x * (Height + 1) + y]</c>.
+        /// Allows <c>O(1)</c> exact evaluation of vertical edge continuity over any segment <c>[y0, y1]</c>.
+        /// </summary>
+        public readonly int[] VertEdgeColPrefix;
+
+        /// <summary>
+        /// Row-wise prefix sums of high-contrast glyph stroke transitions: <c>StrokeRowPrefix[y * (Width + 1) + x]</c>.
+        /// Allows <c>O(1)</c> row activity queries across any horizontal band <c>[x0, x1]</c>.
+        /// </summary>
+        public readonly int[] StrokeRowPrefix;
+
+        public EdgeSnapContext(Bgra32Image image)
+        {
+            Image = image;
+            Width = image.Width;
+            Height = image.Height;
+
+            var w = Width;
+            var h = Height;
+            var stride = image.Stride;
+            var pixels = image.Pixels;
+
+            HorizEdgeRowPrefix = new int[h * (w + 1)];
+            VertEdgeColPrefix = new int[w * (h + 1)];
+            StrokeRowPrefix = new int[h * (w + 1)];
+
+            if (w < 4 || h < 4) return;
+
+            for (var y = 1; y < h - 1; y++)
+            {
+                var rowAbove = (y - 1) * stride;
+                var rowAt = y * stride;
+                var rowBelow = (y + 1) * stride;
+                var hBase = y * (w + 1);
+                var sBase = y * (w + 1);
+                var hSum = 0;
+                var sSum = 0;
+
+                for (var x = 0; x < w; x++)
+                {
+                    if (x >= 2 && x < w - 2)
+                    {
+                        if (IsHorizontalStrokeEdge(pixels, rowAt, x))
+                        {
+                            sSum++;
+                        }
+                    }
+
+                    if (x >= 1 && x < w - 1)
+                    {
+                        var px4 = x * 4;
+                        var g1 = ColorDistSq(pixels, rowAt + px4, rowAbove + px4);
+                        var g2 = ColorDistSq(pixels, rowBelow + px4, rowAbove + px4);
+                        var tanAbove = ColorDistSq(pixels, rowAbove + px4 + 4, rowAbove + px4 - 4);
+                        var tanAt = ColorDistSq(pixels, rowAt + px4 + 4, rowAt + px4 - 4);
+                        if ((g1 >= 169 || g2 >= 225) && (tanAbove <= 441 || tanAt <= 441))
+                        {
+                            hSum++;
+                        }
+
+                        var v1 = ColorDistSq(pixels, rowAt + px4, rowAt + px4 - 4);
+                        var v2 = ColorDistSq(pixels, rowAt + px4 + 4, rowAt + px4 - 4);
+                        var tanLeft = ColorDistSq(pixels, rowBelow + px4 - 4, rowAbove + px4 - 4);
+                        var tanColAt = ColorDistSq(pixels, rowBelow + px4, rowAbove + px4);
+                        var isVertEdge = (v1 >= 169 || v2 >= 225) && (tanLeft <= 441 || tanColAt <= 441) ? 1 : 0;
+                        var vBase = x * (h + 1);
+                        VertEdgeColPrefix[vBase + y + 1] = VertEdgeColPrefix[vBase + y] + isVertEdge;
+                    }
+
+                    HorizEdgeRowPrefix[hBase + x + 1] = hSum;
+                    StrokeRowPrefix[sBase + x + 1] = sSum;
+                }
+            }
+
+            // Fill final y = h - 1 entry for vertical prefix sums.
+            for (var x = 1; x < w - 1; x++)
+            {
+                var vBase = x * (h + 1);
+                VertEdgeColPrefix[vBase + h] = VertEdgeColPrefix[vBase + h - 1];
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int CountRowStrokes(int y, int x0, int x1)
+        {
+            if (y <= 0 || y >= Height - 1 || x1 <= x0) return 0;
+            var rowBase = y * (Width + 1);
+            return StrokeRowPrefix[rowBase + x1] - StrokeRowPrefix[rowBase + x0];
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int CountHorizEdgeHits(int y, int x0, int x1)
+        {
+            if (y <= 0 || y >= Height - 1 || x1 <= x0) return 0;
+            var rowBase = y * (Width + 1);
+            return HorizEdgeRowPrefix[rowBase + x1] - HorizEdgeRowPrefix[rowBase + x0];
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int CountVertEdgeHits(int x, int y0, int y1)
+        {
+            if (x <= 0 || x >= Width - 1 || y1 <= y0) return 0;
+            var colBase = x * (Height + 1);
+            return VertEdgeColPrefix[colBase + y1] - VertEdgeColPrefix[colBase + y0];
+        }
     }
 
     // ------------------------------------------------------------------ text line & paragraph detection
 
     /// <summary>
-    /// Detects a full text line and/or multi-line paragraph at <c>(x, y)</c>.
-    /// Uses a two-pass vertical/horizontal stabilization so hovering at the start, middle, or end of a line
-    /// yields the exact same full-line bounding box.
+    /// Detects a full text line and/or multi-line paragraph at <c>(x, y)</c> using <c>O(1)</c> integral stroke queries,
+    /// two-pass full-width stabilization, and column-overlap validation so multi-column layouts never merge across gutters.
     /// </summary>
-    private static PixelRect DetectTextRegions(Bgra32Image image, int x, int y, PixelRect roi, List<SnapCandidate> results)
+    private static PixelRect DetectTextRegions(EdgeSnapContext ctx, int x, int y, PixelRect roi, List<SnapCandidate> results)
     {
+        var image = ctx.Image;
         var rx0 = roi.X;
         var rx1 = roi.Right;
         var ry0 = roi.Y;
@@ -67,7 +210,7 @@ public static class EdgeRectDetector
         var h = ry1 - ry0;
         if (w < MinTextLineWidth || h < 12) return default;
 
-        // Check if (x, y) is near glyph strokes (within +-10px vertically and +-28px horizontally).
+        // Check if (x, y) is near glyph strokes (within +-10px vertically and +-28px horizontally) in O(height) via prefix sums.
         var nearTransitions = 0;
         var ny0 = Math.Max(ry0, y - 10);
         var ny1 = Math.Min(ry1 - 1, y + 10);
@@ -75,11 +218,7 @@ public static class EdgeRectDetector
         var nx1 = Math.Min(rx1 - 2, x + 28);
         for (var py = ny0; py <= ny1; py++)
         {
-            var rowOffset = py * image.Stride;
-            for (var px = nx0; px < nx1; px++)
-            {
-                if (IsHorizontalStrokeEdge(image.Pixels, rowOffset, px)) nearTransitions++;
-            }
+            nearTransitions += ctx.CountRowStrokes(py, nx0, nx1);
         }
         if (nearTransitions < 22) return default;
 
@@ -87,7 +226,7 @@ public static class EdgeRectDetector
         var initBandX0 = Math.Max(rx0 + 2, x - 140);
         var initBandX1 = Math.Min(rx1 - 2, x + 140);
         Span<bool> rowActive = stackalloc bool[h];
-        ComputeRowActivity(image, ry0, h, initBandX0, initBandX1, rowActive);
+        ComputeRowActivity(ctx, ry0, h, initBandX0, initBandX1, rowActive);
 
         var cy = y - ry0;
         var lineTop = cy;
@@ -109,7 +248,7 @@ public static class EdgeRectDetector
         var spanBandX1 = Math.Min(rx1 - 2, lineRight);
         if (spanBandX1 - spanBandX0 >= 24)
         {
-            ComputeRowActivity(image, ry0, h, spanBandX0, spanBandX1, rowActive);
+            ComputeRowActivity(ctx, ry0, h, spanBandX0, spanBandX1, rowActive);
             while (lineTop > 0 && HasActiveWithin(rowActive, lineTop - 1, -1, maxGap: 3)) lineTop--;
             while (lineBottom < h - 1 && HasActiveWithin(rowActive, lineBottom + 1, +1, maxGap: 3)) lineBottom++;
             lineHeight = lineBottom - lineTop + 1;
@@ -136,7 +275,7 @@ public static class EdgeRectDetector
             results.Add(new SnapCandidate(lineRect, SnapKind.TextBlock, SnapSource.ImageEdge, Depth: 3, Label: "文本行"));
         }
 
-        // Expand vertically to adjacent text lines that belong to the same paragraph/block.
+        // Expand vertically to adjacent text lines that belong to the same column & paragraph/block.
         var maxLineGap = Math.Clamp((int)(lineHeight * 0.95), 5, 28);
         var blockTop = lineTop;
         var blockBottom = lineBottom;
@@ -144,12 +283,11 @@ public static class EdgeRectDetector
         var blockRight = lineRight;
         var lineCount = 1;
 
-        // Recompute row activity over a wider horizontal window covering the line so paragraph lines align properly.
         var paraBandX0 = Math.Max(rx0 + 2, Math.Min(x - 160, lineLeft));
         var paraBandX1 = Math.Min(rx1 - 2, Math.Max(x + 160, lineRight));
-        ComputeRowActivity(image, ry0, h, paraBandX0, paraBandX1, rowActive);
+        ComputeRowActivity(ctx, ry0, h, paraBandX0, paraBandX1, rowActive);
 
-        // Scan upwards for adjacent lines
+        // Scan upwards for adjacent lines in the same column
         var probeY = blockTop - 1;
         while (probeY > 0)
         {
@@ -162,7 +300,8 @@ public static class EdgeRectDetector
             var prevH = prevBottom - prevTop + 1;
             if (prevH < 6 || prevH > lineHeight * 2) break;
             var seedX = Math.Clamp(x, blockLeft, blockRight);
-            if (FindLineHorizontalSpan(image, rx0, rx1, ry0 + prevTop, ry0 + prevBottom, seedX, Math.Max(lineHeight, prevH), out var l, out var r))
+            if (FindLineHorizontalSpan(image, rx0, rx1, ry0 + prevTop, ry0 + prevBottom, seedX, Math.Max(lineHeight, prevH), out var l, out var r) &&
+                BelongsToSameColumn(blockLeft, blockRight, l, r))
             {
                 blockTop = prevTop;
                 blockLeft = Math.Min(blockLeft, l);
@@ -173,7 +312,7 @@ public static class EdgeRectDetector
             else break;
         }
 
-        // Scan downwards for adjacent lines
+        // Scan downwards for adjacent lines in the same column
         probeY = blockBottom + 1;
         while (probeY < h)
         {
@@ -186,7 +325,8 @@ public static class EdgeRectDetector
             var nextH = nextBottom - nextTop + 1;
             if (nextH < 6 || nextH > lineHeight * 2) break;
             var seedX = Math.Clamp(x, blockLeft, blockRight);
-            if (FindLineHorizontalSpan(image, rx0, rx1, ry0 + nextTop, ry0 + nextBottom, seedX, Math.Max(lineHeight, nextH), out var l, out var r))
+            if (FindLineHorizontalSpan(image, rx0, rx1, ry0 + nextTop, ry0 + nextBottom, seedX, Math.Max(lineHeight, nextH), out var l, out var r) &&
+                BelongsToSameColumn(blockLeft, blockRight, l, r))
             {
                 blockBottom = nextBottom;
                 blockLeft = Math.Min(blockLeft, l);
@@ -218,18 +358,20 @@ public static class EdgeRectDetector
         return isFullTextLine ? lineRect : default;
     }
 
-    private static void ComputeRowActivity(Bgra32Image image, int ry0, int h, int bandX0, int bandX1, Span<bool> rowActive)
+    private static bool BelongsToSameColumn(int blockLeft, int blockRight, int lineLeft, int lineRight)
+    {
+        var overlap = Math.Min(blockRight, lineRight) - Math.Max(blockLeft, lineLeft);
+        if (overlap <= 0) return false;
+        var minWidth = Math.Max(1, Math.Min(blockRight - blockLeft, lineRight - lineLeft));
+        // Either significant horizontal overlap (>= 25% of narrower span) or aligned left margin.
+        return overlap * 4 >= minWidth || Math.Abs(blockLeft - lineLeft) <= 36;
+    }
+
+    private static void ComputeRowActivity(EdgeSnapContext ctx, int ry0, int h, int bandX0, int bandX1, Span<bool> rowActive)
     {
         for (var ry = 0; ry < h; ry++)
         {
-            var py = ry0 + ry;
-            var rowOffset = py * image.Stride;
-            var count = 0;
-            for (var px = bandX0; px < bandX1; px++)
-            {
-                if (IsHorizontalStrokeEdge(image.Pixels, rowOffset, px)) count++;
-            }
-            rowActive[ry] = count >= 4;
+            rowActive[ry] = ctx.CountRowStrokes(ry0 + ry, bandX0, bandX1) >= 4;
         }
     }
 
@@ -323,13 +465,14 @@ public static class EdgeRectDetector
     // ------------------------------------------------------------------ visual box / container detection
 
     private static void DetectVisualBoxes(
-        Bgra32Image image,
+        EdgeSnapContext ctx,
         int x,
         int y,
         PixelRect roi,
         PixelRect detectedTextRect,
         List<SnapCandidate> results)
     {
+        var image = ctx.Image;
         var seed = SampleMedianColor(image, x, y, roi);
 
         var leftEdges = FindCandidateEdgesHorizontal(image, x, y, roi, direction: -1, seed);
@@ -365,7 +508,7 @@ public static class EdgeRectDetector
                     continue;
                 }
 
-                var score = ScoreRectangleEdges(image, rect);
+                var score = ScoreRectangleEdges(ctx, rect);
                 if (score >= 0.65)
                 {
                     candidates.Add((rect, score));
@@ -396,7 +539,7 @@ public static class EdgeRectDetector
 
     private static List<int> FindCandidateEdgesHorizontal(Bgra32Image image, int x, int y, PixelRect roi, int direction, Bgra32 seed)
     {
-        ReadOnlySpan<int> offsets = [0, -12, 12, -32, 32];
+        ReadOnlySpan<int> offsets = [0, -8, 8, -18, 18, -36, 36];
         var votes = new List<int>(12);
         var limit = direction < 0 ? roi.X + 1 : roi.Right - 2;
 
@@ -424,10 +567,10 @@ public static class EdgeRectDetector
                     }
                 }
 
-                if (grad >= 400 && grad >= prevGrad)
+                if (grad >= 324 && grad >= prevGrad)
                 {
                     AddEdgeVote(votes, direction < 0 ? px + 1 : px);
-                    if (votes.Count >= 6) break;
+                    if (votes.Count >= 8) break;
                 }
                 prevGrad = grad;
             }
@@ -437,7 +580,7 @@ public static class EdgeRectDetector
 
     private static List<int> FindCandidateEdgesVertical(Bgra32Image image, int x, int y, PixelRect roi, int direction, Bgra32 seed)
     {
-        ReadOnlySpan<int> offsets = [0, -16, 16, -48, 48];
+        ReadOnlySpan<int> offsets = [0, -10, 10, -24, 24, -48, 48];
         var votes = new List<int>(12);
         var limit = direction < 0 ? roi.Y + 1 : roi.Bottom - 2;
 
@@ -464,10 +607,10 @@ public static class EdgeRectDetector
                     }
                 }
 
-                if (grad >= 400 && grad >= prevGrad)
+                if (grad >= 324 && grad >= prevGrad)
                 {
                     AddEdgeVote(votes, direction < 0 ? py + 1 : py);
-                    if (votes.Count >= 6) break;
+                    if (votes.Count >= 8) break;
                 }
                 prevGrad = grad;
             }
@@ -481,91 +624,92 @@ public static class EdgeRectDetector
         {
             if (Math.Abs(list[i] - coord) <= 2) return;
         }
-        if (list.Count < 6) list.Add(coord);
+        if (list.Count < 8) list.Add(coord);
     }
 
     /// <summary>
-    /// Evaluates how well the 4 edges of <paramref name="r"/> align with actual visual boundaries in <paramref name="image"/>.
-    /// Also checks tangential continuity so lines cutting through text glyphs are rejected.
+    /// Evaluates how well the 4 edges of <paramref name="r"/> align with actual visual boundaries using <c>O(1)</c>
+    /// integral prefix queries and corner-inset tolerance so rounded-corner buttons/cards are accurately recognized.
     /// </summary>
-    private static double ScoreRectangleEdges(Bgra32Image image, PixelRect r)
+    private static double ScoreRectangleEdges(EdgeSnapContext ctx, PixelRect r)
     {
-        if (r.X <= 1 || r.Y <= 1 || r.Right >= image.Width - 1 || r.Bottom >= image.Height - 1)
+        if (r.X <= 1 || r.Y <= 1 || r.Right >= ctx.Width - 1 || r.Bottom >= ctx.Height - 1)
             return 0;
 
-        var topScore = MeasureHorizontalEdge(image, r.X, r.Right, r.Y);
-        var bottomScore = MeasureHorizontalEdge(image, r.X, r.Right, r.Bottom);
-        var leftScore = MeasureVerticalEdge(image, r.Y, r.Bottom, r.X);
-        var rightScore = MeasureVerticalEdge(image, r.Y, r.Bottom, r.Right);
+        // Inset past potential rounded corners (up to 14px depending on box size) so curved corners don't penalize straight edges.
+        var cornerInsetX = Math.Clamp(Math.Min(r.Width, r.Height) / 6, 2, 14);
+        var cornerInsetY = Math.Clamp(Math.Min(r.Width, r.Height) / 6, 2, 14);
 
-        if (topScore < 0.65 || bottomScore < 0.65 || leftScore < 0.65 || rightScore < 0.65) return 0;
+        var topScore = MeasureHorizontalEdgeIntegral(ctx, r.X + cornerInsetX, r.Right - cornerInsetX, r.Y);
+        if (topScore < 0.65) return 0;
+
+        var bottomScore = MeasureHorizontalEdgeIntegral(ctx, r.X + cornerInsetX, r.Right - cornerInsetX, r.Bottom);
+        if (bottomScore < 0.65) return 0;
+
+        var leftScore = MeasureVerticalEdgeIntegral(ctx, r.Y + cornerInsetY, r.Bottom - cornerInsetY, r.X);
+        if (leftScore < 0.65) return 0;
+
+        var rightScore = MeasureVerticalEdgeIntegral(ctx, r.Y + cornerInsetY, r.Bottom - cornerInsetY, r.Right);
+        if (rightScore < 0.65) return 0;
 
         return (topScore + bottomScore + leftScore + rightScore) * 0.25;
     }
 
-    private static double MeasureHorizontalEdge(Bgra32Image image, int x0, int x1, int y)
+    private static double MeasureHorizontalEdgeIntegral(EdgeSnapContext ctx, int x0, int x1, int y)
     {
+        x0 = Math.Clamp(x0, 1, ctx.Width - 2);
+        x1 = Math.Clamp(x1, 1, ctx.Width - 2);
         var span = x1 - x0;
-        if (span <= 0) return 0;
-        var samples = Math.Clamp(span / 4, 8, 48);
-        var quarter = Math.Max(2, samples / 4);
-        int hits = 0, startHits = 0, endHits = 0;
-        var yIn = Math.Clamp(y, 1, image.Height - 2);
-        var rowAbove = (yIn - 1) * image.Stride;
-        var rowAt = yIn * image.Stride;
-        var rowBelow = (yIn + 1) * image.Stride;
+        if (span < 8) return 0;
 
-        for (var i = 1; i <= samples; i++)
+        var quarter = Math.Max(2, span / 4);
+        var bestScore = 0.0;
+
+        // Check y and +-1px to tolerate anti-aliased / subpixel border positioning.
+        for (var dy = -1; dy <= 1; dy++)
         {
-            var px = Math.Clamp(x0 + (int)((long)i * span / (samples + 1)), 1, image.Width - 2);
-            var g1 = ColorDistSq(image.Pixels, rowAt + px * 4, rowAbove + px * 4);
-            var g2 = ColorDistSq(image.Pixels, rowBelow + px * 4, rowAbove + px * 4);
-            // Tangential stability: along a real horizontal edge, either the row above or the row below is locally smooth.
-            var tanAbove = ColorDistSq(image.Pixels, rowAbove + (px + 1) * 4, rowAbove + (px - 1) * 4);
-            var tanAt = ColorDistSq(image.Pixels, rowAt + (px + 1) * 4, rowAt + (px - 1) * 4);
-            var isSmoothAlongEdge = tanAbove <= 400 || tanAt <= 400;
+            var py = y + dy;
+            if (py <= 0 || py >= ctx.Height - 1) continue;
 
-            if ((g1 >= 196 || g2 >= 256) && isSmoothAlongEdge)
-            {
-                hits++;
-                if (i <= quarter) startHits++;
-                if (i > samples - quarter) endHits++;
-            }
+            var totalHits = ctx.CountHorizEdgeHits(py, x0, x1);
+            var score = (double)totalHits / span;
+            if (score <= bestScore) continue;
+
+            var startHits = ctx.CountHorizEdgeHits(py, x0, x0 + quarter);
+            var endHits = ctx.CountHorizEdgeHits(py, x1 - quarter, x1);
+            if (startHits * 2 < quarter || endHits * 2 < quarter) continue;
+
+            bestScore = score;
         }
-        if (startHits * 2 < quarter || endHits * 2 < quarter) return 0;
-        return (double)hits / samples;
+        return bestScore;
     }
 
-    private static double MeasureVerticalEdge(Bgra32Image image, int y0, int y1, int x)
+    private static double MeasureVerticalEdgeIntegral(EdgeSnapContext ctx, int y0, int y1, int x)
     {
+        y0 = Math.Clamp(y0, 1, ctx.Height - 2);
+        y1 = Math.Clamp(y1, 1, ctx.Height - 2);
         var span = y1 - y0;
-        if (span <= 0) return 0;
-        var samples = Math.Clamp(span / 4, 8, 48);
-        var quarter = Math.Max(2, samples / 4);
-        int hits = 0, startHits = 0, endHits = 0;
-        var xIn = Math.Clamp(x, 1, image.Width - 2);
+        if (span < 6) return 0;
 
-        for (var i = 1; i <= samples; i++)
+        var quarter = Math.Max(2, span / 4);
+        var bestScore = 0.0;
+
+        for (var dx = -1; dx <= 1; dx++)
         {
-            var py = Math.Clamp(y0 + (int)((long)i * span / (samples + 1)), 1, image.Height - 2);
-            var row = py * image.Stride;
-            var rowPrev = (py - 1) * image.Stride;
-            var rowNext = (py + 1) * image.Stride;
-            var g1 = ColorDistSq(image.Pixels, row + xIn * 4, row + (xIn - 1) * 4);
-            var g2 = ColorDistSq(image.Pixels, row + (xIn + 1) * 4, row + (xIn - 1) * 4);
-            var tanLeft = ColorDistSq(image.Pixels, rowNext + (xIn - 1) * 4, rowPrev + (xIn - 1) * 4);
-            var tanAt = ColorDistSq(image.Pixels, rowNext + xIn * 4, rowPrev + xIn * 4);
-            var isSmoothAlongEdge = tanLeft <= 400 || tanAt <= 400;
+            var px = x + dx;
+            if (px <= 0 || px >= ctx.Width - 1) continue;
 
-            if ((g1 >= 196 || g2 >= 256) && isSmoothAlongEdge)
-            {
-                hits++;
-                if (i <= quarter) startHits++;
-                if (i > samples - quarter) endHits++;
-            }
+            var totalHits = ctx.CountVertEdgeHits(px, y0, y1);
+            var score = (double)totalHits / span;
+            if (score <= bestScore) continue;
+
+            var startHits = ctx.CountVertEdgeHits(px, y0, y0 + quarter);
+            var endHits = ctx.CountVertEdgeHits(px, y1 - quarter, y1);
+            if (startHits * 2 < quarter || endHits * 2 < quarter) continue;
+
+            bestScore = score;
         }
-        if (startHits * 2 < quarter || endHits * 2 < quarter) return 0;
-        return (double)hits / samples;
+        return bestScore;
     }
 
     private static Bgra32 SampleMedianColor(Bgra32Image image, int x, int y, PixelRect roi)
@@ -576,6 +720,7 @@ public static class EdgeRectDetector
         return c0.DistanceSquared(c1) <= c0.DistanceSquared(c2) ? c0 : c1;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int ColorDistSq(byte[] p, int i, int j)
     {
         var db = p[i] - p[j];

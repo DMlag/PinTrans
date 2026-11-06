@@ -417,6 +417,17 @@
                             </StackPanel>
                         </GroupBox>
 
+                        <GroupBox Header="离线 OCR 引擎 (PP-OCRv4 ONNX)">
+                            <StackPanel>
+                                <TextBlock x:Name="OcrEngineStatusText" Foreground="#333" TextWrapping="Wrap" Margin="0,0,0,6" />
+                                <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,8" TextWrapping="Wrap"
+                                           Text="软件优先使用高精度 PP-OCRv4 神经网络离线模型（DBNet 检测 + SVTR 识别）；若未安装模型包，会自动回退至增强版 Windows 原生离线 OCR（含暗色自动反色、去彩边与双三次锐化）。" />
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="DownloadOcrModelsButton" Content="下载 / 修复 PP-OCRv4 离线模型 (~15 MB)" Padding="12,4" Click="OnDownloadOcrModels" Margin="0,0,10,0" />
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
                         <GroupBox Header="版本与数据目录">
                             <StackPanel>
                                 <TextBlock x:Name="VersionText" Foreground="#555" TextWrapping="Wrap" />

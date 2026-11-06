@@ -7,9 +7,11 @@ using System.Windows.Media;
 using System.Windows.Navigation;
 using AiPhoto.App.Diagnostics;
 using AiPhoto.App.Infrastructure;
+using AiPhoto.App.Ocr;
 using AiPhoto.Core.Hotkeys;
 using AiPhoto.Core.Imaging;
 using AiPhoto.Core.Net;
+using AiPhoto.Core.Ocr;
 using AiPhoto.Core.Settings;
 using AiPhoto.Core.Snapping;
 using AiPhoto.Core.Translation.Gemini;
@@ -92,6 +94,23 @@ public partial class SettingsWindow : Window
         var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "dev";
         VersionText.Text = $"PinTrans {version.Split('+')[0]}  ·  设置文件：{AppPaths.SettingsFile}";
         UpdateProxyDetails();
+        UpdateOcrEngineStatus();
+    }
+
+    private void UpdateOcrEngineStatus()
+    {
+        if (PaddleOcrModelManager.TryResolveModelPaths(AppPaths.ModelsDirectory, out var detPath, out _))
+        {
+            OcrEngineStatusText.Foreground = Brushes.SeaGreen;
+            OcrEngineStatusText.Text = $"当前引擎：PP-OCRv4 ONNX 高精度离线模型（已就绪 · {Path.GetDirectoryName(detPath)}）";
+            DownloadOcrModelsButton.Content = "重新校验 / 修复 PP-OCRv4 离线模型";
+        }
+        else
+        {
+            OcrEngineStatusText.Foreground = Brushes.DarkGoldenrod;
+            OcrEngineStatusText.Text = "当前引擎：Windows 原生离线 OCR（增强版） · 可点击下方按钮一键下载 PP-OCRv4 深度学习模型";
+            DownloadOcrModelsButton.Content = "下载 PP-OCRv4 离线模型 (~15 MB)";
+        }
     }
 
     private static HotkeyGesture Parse(string text) => HotkeyGesture.TryParse(text, out var g) ? g : HotkeyGesture.None;
@@ -208,6 +227,32 @@ public partial class SettingsWindow : Window
 
     private void OnOpenLogDir(object sender, RoutedEventArgs e)
         => Process.Start(new ProcessStartInfo(Log.Directory) { UseShellExecute = true });
+
+    private async void OnDownloadOcrModels(object sender, RoutedEventArgs e)
+    {
+        CollectUnboundValues();
+        DownloadOcrModelsButton.IsEnabled = false;
+        OcrEngineStatusText.Foreground = Brushes.Gray;
+        var progress = new Progress<string>(msg => OcrEngineStatusText.Text = msg);
+        try
+        {
+            using var http = ProxyHttpClientFactory.Create(
+                _settings.Network.ToProxySettings(),
+                TimeSpan.FromSeconds(Math.Max(60, _settings.Network.TimeoutSeconds)));
+            await PaddleOcrModelManager.DownloadModelsAsync(http, AppPaths.ModelsDirectory, progress);
+            WindowsOfflineOcrService.ResetPaddleEngineCache();
+            UpdateOcrEngineStatus();
+        }
+        catch (Exception ex)
+        {
+            OcrEngineStatusText.Foreground = Brushes.Firebrick;
+            OcrEngineStatusText.Text = "模型下载失败：" + ex.Message;
+        }
+        finally
+        {
+            DownloadOcrModelsButton.IsEnabled = true;
+        }
+    }
 
     private void OnClearData(object sender, RoutedEventArgs e)
     {

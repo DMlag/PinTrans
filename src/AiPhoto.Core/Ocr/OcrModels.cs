@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using AiPhoto.Core.Imaging;
 
@@ -21,7 +22,11 @@ public sealed record OcrRecognitionResult(
 }
 
 /// <summary>
-/// Pre- and post-processing utilities for local offline OCR (CJK spacing normalization and small-crop upscaling).
+/// Pre- and post-processing utilities for local offline OCR:
+/// <list type="bullet">
+/// <item>CJK spacing normalization (<see cref="JoinWords"/>)</item>
+/// <item>Dark-mode auto-inversion, ClearType subpixel de-fringing, contrast normalization, and Catmull-Rom bicubic sharp upscaling (<see cref="PrepareImageForOcr"/>)</item>
+/// </list>
 /// </summary>
 public static class OcrTextFormatter
 {
@@ -76,8 +81,12 @@ public static class OcrTextFormatter
           or (>= '\uFF00' and <= '\uFFEF');      // Halfwidth and Fullwidth Forms
 
     /// <summary>
-    /// Small crops (e.g. a single line of 12-16px text) are upscaled 2x with bilinear interpolation and padded
-    /// with a perimeter-colored border so <c>Windows.Media.Ocr</c> achieves high recognition accuracy.
+    /// Prepares an image crop for <c>Windows.Media.Ocr</c>:
+    /// <list type="number">
+    /// <item>Detects dark-mode backgrounds (white/light text on dark background) and auto-inverts to dark text on white background.</item>
+    /// <item>Eliminates ClearType RGB subpixel fringes and stretches low-contrast dynamic range.</item>
+    /// <item>Upscales small crops 2x using Catmull-Rom bicubic sharp interpolation and adds a clean background border.</item>
+    /// </list>
     /// </summary>
     public static Bgra32Image PrepareImageForOcr(Bgra32Image source, out int scale, out int padding)
     {
@@ -92,51 +101,195 @@ public static class OcrTextFormatter
         scale = (source.Height < 64 || source.Width < 160) ? 2 : 1;
         padding = 12 * scale;
 
-        var scaledW = source.Width * scale;
-        var scaledH = source.Height * scale;
+        var normalized = NormalizeForOcr(source, out var bgLum);
+        var borderColor = new Bgra32(bgLum, bgLum, bgLum, 255);
+
+        var scaledW = normalized.Width * scale;
+        var scaledH = normalized.Height * scale;
         var outW = scaledW + padding * 2;
         var outH = scaledH + padding * 2;
 
-        var borderColor = SamplePerimeterColor(source);
         var result = new Bgra32Image(outW, outH);
-        for (var y = 0; y < outH; y++)
-        for (var x = 0; x < outW; x++)
-            result.SetPixel(x, y, borderColor);
+        result.Pixels.AsSpan().Fill(bgLum);
+        for (var i = 3; i < result.Pixels.Length; i += 4)
+        {
+            result.Pixels[i] = 255;
+        }
 
         if (scale == 1)
         {
-            result.Blit(source, padding, padding);
+            result.Blit(normalized, padding, padding);
             return result;
         }
 
-        // Bilinear 2x upscale into [padding .. padding + scaledW, padding .. padding + scaledH]
+        // Catmull-Rom Bicubic 2x sharp upscale into [padding .. padding + scaledW, padding .. padding + scaledH]
         for (var dy = 0; dy < scaledH; dy++)
         {
             var fy = (dy + 0.5) / scale - 0.5;
-            var y0 = Math.Clamp((int)Math.Floor(fy), 0, source.Height - 1);
-            var y1 = Math.Clamp(y0 + 1, 0, source.Height - 1);
-            var wy = Math.Clamp(fy - y0, 0.0, 1.0);
+            var iy = (int)Math.Floor(fy);
+            var ty = fy - iy;
+
+            var wy0 = CubicWeight(-1.0 - ty);
+            var wy1 = CubicWeight(-ty);
+            var wy2 = CubicWeight(1.0 - ty);
+            var wy3 = CubicWeight(2.0 - ty);
+
+            var y0 = Math.Clamp(iy - 1, 0, normalized.Height - 1);
+            var y1 = Math.Clamp(iy, 0, normalized.Height - 1);
+            var y2 = Math.Clamp(iy + 1, 0, normalized.Height - 1);
+            var y3 = Math.Clamp(iy + 2, 0, normalized.Height - 1);
 
             for (var dx = 0; dx < scaledW; dx++)
             {
                 var fx = (dx + 0.5) / scale - 0.5;
-                var x0 = Math.Clamp((int)Math.Floor(fx), 0, source.Width - 1);
-                var x1 = Math.Clamp(x0 + 1, 0, source.Width - 1);
-                var wx = Math.Clamp(fx - x0, 0.0, 1.0);
+                var ix = (int)Math.Floor(fx);
+                var tx = fx - ix;
 
-                var c00 = source.GetPixel(x0, y0);
-                var c10 = source.GetPixel(x1, y0);
-                var c01 = source.GetPixel(x0, y1);
-                var c11 = source.GetPixel(x1, y1);
+                var wx0 = CubicWeight(-1.0 - tx);
+                var wx1 = CubicWeight(-tx);
+                var wx2 = CubicWeight(1.0 - tx);
+                var wx3 = CubicWeight(2.0 - tx);
 
-                var b = Bilinear(c00.B, c10.B, c01.B, c11.B, wx, wy);
-                var g = Bilinear(c00.G, c10.G, c01.G, c11.G, wx, wy);
-                var r = Bilinear(c00.R, c10.R, c01.R, c11.R, wx, wy);
-                result.SetPixel(padding + dx, padding + dy, new Bgra32(b, g, r, 255));
+                var x0 = Math.Clamp(ix - 1, 0, normalized.Width - 1);
+                var x1 = Math.Clamp(ix, 0, normalized.Width - 1);
+                var x2 = Math.Clamp(ix + 1, 0, normalized.Width - 1);
+                var x3 = Math.Clamp(ix + 2, 0, normalized.Width - 1);
+
+                var r0 = SampleRowCubic(normalized, y0, x0, x1, x2, x3, wx0, wx1, wx2, wx3);
+                var r1 = SampleRowCubic(normalized, y1, x0, x1, x2, x3, wx0, wx1, wx2, wx3);
+                var r2 = SampleRowCubic(normalized, y2, x0, x1, x2, x3, wx0, wx1, wx2, wx3);
+                var r3 = SampleRowCubic(normalized, y3, x0, x1, x2, x3, wx0, wx1, wx2, wx3);
+
+                var lum = (byte)Math.Clamp((int)Math.Round(r0 * wy0 + r1 * wy1 + r2 * wy2 + r3 * wy3), 0, 255);
+                result.SetPixel(padding + dx, padding + dy, new Bgra32(lum, lum, lum, 255));
             }
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Converts to de-fringed grayscale, auto-inverts dark backgrounds (so text is always dark on light background),
+    /// and stretches low-contrast crops.
+    /// </summary>
+    internal static Bgra32Image NormalizeForOcr(Bgra32Image source, out byte backgroundLuminance)
+    {
+        var w = source.Width;
+        var h = source.Height;
+        var lumBuffer = new byte[w * h];
+        Span<int> hist = stackalloc int[256];
+
+        long borderSum = 0;
+        var borderCount = 0;
+
+        for (var y = 0; y < h; y++)
+        {
+            var rowOffset = y * source.Stride;
+            var lRow = y * w;
+            var isBorderY = y == 0 || y == h - 1;
+            for (var x = 0; x < w; x++)
+            {
+                var idx = rowOffset + x * 4;
+                var b = source.Pixels[idx];
+                var g = source.Pixels[idx + 1];
+                var r = source.Pixels[idx + 2];
+                var lum = (byte)((77 * r + 150 * g + 29 * b + 128) >> 8);
+                lumBuffer[lRow + x] = lum;
+                hist[lum]++;
+
+                if (isBorderY || x == 0 || x == w - 1)
+                {
+                    borderSum += lum;
+                    borderCount++;
+                }
+            }
+        }
+
+        // Determine dominant background luminance from median and perimeter average.
+        var total = w * h;
+        var medianLum = FindPercentile(hist, total, 0.50);
+        var borderAvg = borderCount > 0 ? (int)(borderSum / borderCount) : medianLum;
+        var estimatedBg = (medianLum + borderAvg) / 2;
+
+        // If the background is dark (< 112), invert so dark-mode screenshots become dark text on light background.
+        var invert = estimatedBg < 112;
+        if (invert)
+        {
+            hist.Clear();
+            for (var i = 0; i < lumBuffer.Length; i++)
+            {
+                var inv = (byte)(255 - lumBuffer[i]);
+                lumBuffer[i] = inv;
+                hist[inv]++;
+            }
+        }
+
+        var low = FindPercentile(hist, total, 0.02);
+        var high = FindPercentile(hist, total, 0.90);
+        var range = high - low;
+
+        var output = new Bgra32Image(w, h);
+        // Stretch contrast if there is meaningful foreground/background separation (range >= 18) but less than full dynamic range.
+        var stretch = range >= 18 && (high < 242 || low > 28);
+        for (var y = 0; y < h; y++)
+        {
+            var lRow = y * w;
+            var outRow = y * output.Stride;
+            for (var x = 0; x < w; x++)
+            {
+                var v = (int)lumBuffer[lRow + x];
+                if (stretch)
+                {
+                    v = Math.Clamp((v - low) * 255 / range, 0, 255);
+                }
+                var bv = (byte)v;
+                var o = outRow + x * 4;
+                output.Pixels[o] = bv;
+                output.Pixels[o + 1] = bv;
+                output.Pixels[o + 2] = bv;
+                output.Pixels[o + 3] = 255;
+            }
+        }
+
+        backgroundLuminance = stretch ? (byte)255 : (byte)Math.Clamp(invert ? 255 - borderAvg : borderAvg, 200, 255);
+        return output;
+    }
+
+    private static int FindPercentile(ReadOnlySpan<int> hist, int total, double percentile)
+    {
+        var target = (int)Math.Round(total * percentile);
+        var acc = 0;
+        for (var i = 0; i < 256; i++)
+        {
+            acc += hist[i];
+            if (acc >= target) return i;
+        }
+        return 255;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static double CubicWeight(double x)
+    {
+        // Catmull-Rom spline kernel (a = -0.5) for sharp bicubic interpolation.
+        const double a = -0.5;
+        x = Math.Abs(x);
+        if (x <= 1.0) return (a + 2.0) * x * x * x - (a + 3.0) * x * x + 1.0;
+        if (x < 2.0) return a * x * x * x - 5.0 * a * x * x + 8.0 * a * x - 4.0 * a;
+        return 0.0;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static double SampleRowCubic(
+        Bgra32Image img,
+        int y,
+        int x0, int x1, int x2, int x3,
+        double w0, double w1, double w2, double w3)
+    {
+        var row = y * img.Stride;
+        return img.Pixels[row + x0 * 4] * w0 +
+               img.Pixels[row + x1 * 4] * w1 +
+               img.Pixels[row + x2 * 4] * w2 +
+               img.Pixels[row + x3 * 4] * w3;
     }
 
     public static PixelRect MapRectToSource(PixelRect preparedRect, int scale, int padding, PixelRect sourceBounds)
@@ -148,26 +301,172 @@ public static class OcrTextFormatter
         var b = (int)Math.Ceiling((double)(preparedRect.Bottom - padding) / scale);
         return PixelRect.FromLTRB(l, t, r, b).Intersect(sourceBounds);
     }
+}
 
-    private static byte Bilinear(byte v00, byte v10, byte v01, byte v11, double wx, double wy)
+/// <summary>
+/// Recursive XY-Cut layout analyzer that sorts recognized OCR lines into natural human reading order
+/// (handling multi-column layouts, sidebars, and same-row table cells) with a strictly transitive order.
+/// </summary>
+public static class OcrLayoutAnalyzer
+{
+    public static IReadOnlyList<OcrLineResult> SortLinesInReadingOrder(IReadOnlyList<OcrLineResult> lines)
     {
-        var top = v00 * (1 - wx) + v10 * wx;
-        var bot = v01 * (1 - wx) + v11 * wx;
-        return (byte)Math.Clamp((int)Math.Round(top * (1 - wy) + bot * wy), 0, 255);
+        if (lines.Count <= 1) return lines;
+        var ordered = new List<OcrLineResult>(lines.Count);
+        RecursiveXYCut(lines.ToList(), ordered);
+        return ordered;
     }
 
-    private static Bgra32 SamplePerimeterColor(Bgra32Image img)
+    public static string BuildFullText(IReadOnlyList<OcrLineResult> sortedLines)
     {
-        long r = 0, g = 0, b = 0, n = 0;
-        for (var x = 0; x < img.Width; x++)
+        if (sortedLines.Count == 0) return "";
+        var sb = new StringBuilder();
+        for (var i = 0; i < sortedLines.Count; i++)
         {
-            var cTop = img.GetPixel(x, 0);
-            var cBot = img.GetPixel(x, img.Height - 1);
-            r += cTop.R + cBot.R;
-            g += cTop.G + cBot.G;
-            b += cTop.B + cBot.B;
-            n += 2;
+            var cur = sortedLines[i];
+            if (i > 0)
+            {
+                var prev = sortedLines[i - 1];
+                // If two lines are on the same visual row (e.g. key-value cells on one row) and cur is to the right of prev:
+                if (AreOnSameVisualRow(prev.Bounds, cur.Bounds) && cur.Bounds.X >= prev.Bounds.Right - 8)
+                {
+                    sb.Append("  ");
+                }
+                else
+                {
+                    sb.AppendLine();
+                }
+            }
+            sb.Append(cur.Text);
         }
-        return n == 0 ? new Bgra32(255, 255, 255) : new Bgra32((byte)(b / n), (byte)(g / n), (byte)(r / n));
+        return sb.ToString();
+    }
+
+    private static void RecursiveXYCut(List<OcrLineResult> group, List<OcrLineResult> output)
+    {
+        if (group.Count == 0) return;
+        if (group.Count == 1)
+        {
+            output.Add(group[0]);
+            return;
+        }
+
+        // 1. Try horizontal split (top vs bottom sections separated by a full-width vertical whitespace gap).
+        group.Sort(static (a, b) =>
+        {
+            var cmp = a.Bounds.Y.CompareTo(b.Bounds.Y);
+            return cmp != 0 ? cmp : a.Bounds.X.CompareTo(b.Bounds.X);
+        });
+
+        var avgH = Math.Max(10, (int)group.Average(l => l.Bounds.Height));
+        var maxBottomSoFar = group[0].Bounds.Bottom;
+        for (var i = 1; i < group.Count; i++)
+        {
+            var gapY = group[i].Bounds.Y - maxBottomSoFar;
+            if (gapY >= Math.Max(12, (int)(avgH * 0.85)))
+            {
+                var topGroup = group.GetRange(0, i);
+                var bottomGroup = group.GetRange(i, group.Count - i);
+                RecursiveXYCut(topGroup, output);
+                RecursiveXYCut(bottomGroup, output);
+                return;
+            }
+            maxBottomSoFar = Math.Max(maxBottomSoFar, group[i].Bounds.Bottom);
+        }
+
+        // 2. Try vertical column split (left column vs right column separated by a clear vertical gutter).
+        // Only treat as multi-column when there are >= 3 lines and at least one side has >= 2 vertically stacked lines.
+        if (group.Count >= 3)
+        {
+            var byX = new List<OcrLineResult>(group);
+            byX.Sort(static (a, b) =>
+            {
+                var cmp = a.Bounds.X.CompareTo(b.Bounds.X);
+                return cmp != 0 ? cmp : a.Bounds.Y.CompareTo(b.Bounds.Y);
+            });
+
+            var maxRightSoFar = byX[0].Bounds.Right;
+            var bestSplitIndex = -1;
+            var bestGutter = 0;
+
+            for (var i = 1; i < byX.Count; i++)
+            {
+                var gutterX = byX[i].Bounds.X - maxRightSoFar;
+                if (gutterX >= Math.Max(28, (int)(avgH * 1.8)) && gutterX > bestGutter)
+                {
+                    var leftCol = byX.GetRange(0, i);
+                    var rightCol = byX.GetRange(i, byX.Count - i);
+                    if (CountDistinctVerticalRows(leftCol) >= 2 || CountDistinctVerticalRows(rightCol) >= 2)
+                    {
+                        bestGutter = gutterX;
+                        bestSplitIndex = i;
+                    }
+                }
+                maxRightSoFar = Math.Max(maxRightSoFar, byX[i].Bounds.Right);
+            }
+
+            if (bestSplitIndex > 0)
+            {
+                var leftCol = byX.GetRange(0, bestSplitIndex);
+                var rightCol = byX.GetRange(bestSplitIndex, byX.Count - bestSplitIndex);
+                RecursiveXYCut(leftCol, output);
+                RecursiveXYCut(rightCol, output);
+                return;
+            }
+        }
+
+        // 3. Atomic block: cluster into visual rows and sort each row strictly left-to-right.
+        var rows = new List<List<OcrLineResult>>();
+        foreach (var line in group)
+        {
+            List<OcrLineResult>? matchedRow = null;
+            foreach (var row in rows)
+            {
+                if (AreOnSameVisualRow(row[0].Bounds, line.Bounds))
+                {
+                    matchedRow = row;
+                    break;
+                }
+            }
+            if (matchedRow is not null) matchedRow.Add(line);
+            else rows.Add([line]);
+        }
+
+        rows.Sort(static (r1, r2) => r1[0].Bounds.Y.CompareTo(r2[0].Bounds.Y));
+        foreach (var row in rows)
+        {
+            row.Sort(static (a, b) =>
+            {
+                var cmp = a.Bounds.X.CompareTo(b.Bounds.X);
+                return cmp != 0 ? cmp : a.Bounds.Y.CompareTo(b.Bounds.Y);
+            });
+            output.AddRange(row);
+        }
+    }
+
+    private static int CountDistinctVerticalRows(List<OcrLineResult> lines)
+    {
+        if (lines.Count <= 1) return lines.Count;
+        var sorted = new List<OcrLineResult>(lines);
+        sorted.Sort(static (a, b) => a.Bounds.Y.CompareTo(b.Bounds.Y));
+        var rows = 1;
+        var currentRow = sorted[0].Bounds;
+        for (var i = 1; i < sorted.Count; i++)
+        {
+            if (!AreOnSameVisualRow(currentRow, sorted[i].Bounds))
+            {
+                rows++;
+                currentRow = sorted[i].Bounds;
+            }
+        }
+        return rows;
+    }
+
+    public static bool AreOnSameVisualRow(PixelRect a, PixelRect b)
+    {
+        var centerA = a.Y + a.Height * 0.5;
+        var centerB = b.Y + b.Height * 0.5;
+        var minH = Math.Max(8, Math.Min(a.Height, b.Height));
+        return Math.Abs(centerA - centerB) <= minH * 0.45;
     }
 }

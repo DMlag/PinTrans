@@ -1,28 +1,110 @@
 using System.Runtime.InteropServices.WindowsRuntime;
-using System.Text;
 using AiPhoto.App.Diagnostics;
 using AiPhoto.Core.Imaging;
 using AiPhoto.Core.Ocr;
-using Windows.Globalization;
 using Windows.Graphics.Imaging;
 using Windows.Media.Ocr;
 
 namespace AiPhoto.App.Ocr;
 
 /// <summary>
-/// Local, zero-cloud-latency OCR + QR/Barcode recognition service backed by the Windows 10/11 built-in
-/// <see cref="OcrEngine"/> and <see cref="QrCodeScanner"/>.
+/// Local, zero-cloud-latency OCR + QR/Barcode recognition service.
+/// <para>
+/// Automatically uses the neural <b>PP-OCRv4 ONNX</b> engine (<see cref="PaddleOcrOnnxEngine"/>) when models are
+/// available (bundled in <c>models/ppocrv4</c> or downloaded to <c>%AppData%\PinTrans\models\ppocrv4</c>), and
+/// falls back to the enhanced <see cref="OcrEngine"/> (<c>Windows.Media.Ocr</c> with dark-mode auto-inversion,
+/// ClearType de-fringing, Catmull-Rom bicubic upscaling, and XY-Cut layout sorting) otherwise.
+/// </para>
 /// </summary>
 public static class WindowsOfflineOcrService
 {
+    private static readonly object EngineGate = new();
+    private static PaddleOcrOnnxEngine? _paddleEngine;
+    private static bool _paddleProbed;
+
+    public static bool IsPaddleOcrAvailable
+        => PaddleOcrModelManager.TryResolveModelPaths(AppPaths.ModelsDirectory, out _, out _);
+
+    public static void ResetPaddleEngineCache()
+    {
+        lock (EngineGate)
+        {
+            _paddleEngine?.Dispose();
+            _paddleEngine = null;
+            _paddleProbed = false;
+        }
+    }
+
+    private static PaddleOcrOnnxEngine? GetOrCreatePaddleEngine()
+    {
+        lock (EngineGate)
+        {
+            if (_paddleEngine is not null) return _paddleEngine;
+            if (_paddleProbed) return null;
+            _paddleProbed = true;
+
+            if (!PaddleOcrModelManager.TryResolveModelPaths(AppPaths.ModelsDirectory, out var detPath, out var recPath))
+            {
+                return null;
+            }
+
+            try
+            {
+                _paddleEngine = new PaddleOcrOnnxEngine(detPath, recPath);
+                Log.Info($"Loaded PP-OCRv4 ONNX engine from {Path.GetDirectoryName(detPath)}");
+                return _paddleEngine;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"Failed to initialize PP-OCRv4 ONNX engine, falling back to Windows.Media.Ocr: {ex.Message}");
+                return null;
+            }
+        }
+    }
+
     public static async Task<OcrRecognitionResult> RecognizeAsync(Bgra32Image image, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        // 1. Scan QR codes / barcodes on a background thread.
+        // 1. Scan QR codes / barcodes on a background thread in parallel.
         var barcodeTask = Task.Run(() => QrCodeScanner.Scan(image), cancellationToken);
 
-        // 2. Run Windows.Media.Ocr.OcrEngine on the prepared (upscaled/padded if small) image.
+        // 2. Prefer PP-OCRv4 ONNX neural engine if models are ready; otherwise fall back to enhanced Windows.Media.Ocr.
+        IReadOnlyList<OcrLineResult> lines = [];
+        var usedPaddle = false;
+
+        var paddle = GetOrCreatePaddleEngine();
+        if (paddle is not null)
+        {
+            try
+            {
+                lines = await Task.Run(() => paddle.RecognizeLines(image, cancellationToken), cancellationToken).ConfigureAwait(false);
+                usedPaddle = true;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"PP-OCRv4 ONNX inference failed, falling back to Windows.Media.Ocr: {ex.Message}");
+            }
+        }
+
+        if (!usedPaddle)
+        {
+            lines = await RecognizeWithWindowsOcrAsync(image, cancellationToken).ConfigureAwait(false);
+        }
+
+        var barcodes = await barcodeTask.ConfigureAwait(false);
+        var sortedLines = OcrLayoutAnalyzer.SortLinesInReadingOrder(lines);
+        var fullText = OcrLayoutAnalyzer.BuildFullText(sortedLines);
+
+        return new OcrRecognitionResult(fullText, sortedLines, barcodes);
+    }
+
+    private static async Task<IReadOnlyList<OcrLineResult>> RecognizeWithWindowsOcrAsync(Bgra32Image image, CancellationToken cancellationToken)
+    {
         var lines = new List<OcrLineResult>();
         try
         {
@@ -34,7 +116,6 @@ public static class WindowsOfflineOcrService
                     ? prepared
                     : prepared.Crop(prepared.Bounds);
 
-                // Ensure alpha channel is 255 for SoftwareBitmap Bgra8.
                 var buffer = tight.Pixels.AsBuffer();
                 using var softwareBitmap = SoftwareBitmap.CreateCopyFromBuffer(
                     buffer,
@@ -86,33 +167,13 @@ public static class WindowsOfflineOcrService
             Log.Warn($"Windows Offline OCR failed: {ex.Message}");
         }
 
-        var barcodes = await barcodeTask.ConfigureAwait(false);
-
-        // Sort lines in natural reading order (top-to-bottom, then left-to-right for same visual row).
-        lines.Sort( static (a, b) =>
-        {
-            var avgH = Math.Max(8, (a.Bounds.Height + b.Bounds.Height) / 2);
-            var dy = a.Bounds.Y - b.Bounds.Y;
-            if (Math.Abs(dy) > avgH / 2) return dy.CompareTo(0);
-            return a.Bounds.X.CompareTo(b.Bounds.X);
-        });
-
-        var sb = new StringBuilder();
-        foreach (var l in lines)
-        {
-            if (sb.Length > 0) sb.AppendLine();
-            sb.Append(l.Text);
-        }
-
-        return new OcrRecognitionResult(sb.ToString(), lines, barcodes);
+        return lines;
     }
 
     private static OcrEngine? CreateBestOcrEngine()
     {
         try
         {
-            // Prefer a CJK-capable recognizer if installed (since Windows Chinese OCR also recognizes English/Latin text),
-            // otherwise fall back to user profile languages or the first available recognizer.
             var available = OcrEngine.AvailableRecognizerLanguages;
             if (available is not null && available.Count > 0)
             {

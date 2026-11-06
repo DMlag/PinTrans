@@ -66,6 +66,8 @@ public static class AppPaths
 
     public static string LegacySettingsFile => Path.Combine(LegacyDataDirectory, "settings.json");
 
+    public static string ModelsDirectory => Path.Combine(DataDirectory, "models", "ppocrv4");
+
     public static string DefaultSaveDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), AppName);
 
     /// <summary>
