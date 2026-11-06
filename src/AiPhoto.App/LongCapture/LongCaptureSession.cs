@@ -29,6 +29,8 @@ public sealed class LongCaptureSession
     private PixelRect _panelRect;
     private volatile bool _autoScroll;
     private volatile bool _finishRequested;
+    private bool _postWheelSucceededOnce;
+    private bool _useSendInputFallback;
     private bool _completed;
 
     public LongCaptureSession(PixelRect rect, ScreenCaptureService captureService, CaptureSettings settings, Action<Bgra32Image> onCompleted)
@@ -67,18 +69,17 @@ public sealed class LongCaptureSession
     private void SetAutoScroll(bool on)
     {
         _autoScroll = on;
-        if (on)
+    }
+
+    private (int X, int Y) GetScrollTargetPoint()
+    {
+        var targetX = _rect.X + _rect.Width / 2;
+        var targetY = _rect.Y + _rect.Height / 2;
+        if (_panelRect.Width > 0 && _panelRect.Contains(targetX, targetY))
         {
-            // Wheel events go to the window under the cursor: park the cursor in the region once when starting.
-            // Never trap or re-center the cursor afterwards so the user can freely move to the panel to click Finish.
-            var targetX = _rect.X + _rect.Width / 2;
-            var targetY = _rect.Y + _rect.Height / 2;
-            if (_panelRect.Width > 0 && _panelRect.Contains(targetX, targetY))
-            {
-                targetY = _rect.Y + Math.Max(10, _rect.Height / 4);
-            }
-            SetCursorPos(targetX, targetY);
+            targetY = _rect.Y + Math.Max(10, _rect.Height / 4);
         }
+        return (targetX, targetY);
     }
 
     private void PositionPanel()
@@ -125,13 +126,6 @@ public sealed class LongCaptureSession
                 Bgra32Image? frame;
                 if (_autoScroll)
                 {
-                    // If the user moved the mouse outside the capture region or onto the control panel
-                    // (e.g. to click "完成" / "取消"), pause wheel injection and never pull the cursor back.
-                    if (!IsCursorInScrollTarget())
-                    {
-                        await Task.Delay(60, ct);
-                        continue;
-                    }
                     SendWheel(-120 * notches);
                     frame = await CaptureSettledAsync(capturer, settle, ct);
                 }
@@ -150,9 +144,16 @@ public sealed class LongCaptureSession
                 {
                     case StitchStatus.Appended:
                         noChange = 0;
+                        if (!_useSendInputFallback) _postWheelSucceededOnce = true;
                         Report(null);
                         break;
                     case StitchStatus.NoChange when _autoScroll:
+                        if (!_postWheelSucceededOnce && !_useSendInputFallback)
+                        {
+                            // Direct WM_MOUSEWHEEL was ignored by this target window; fall back to transient SendInput.
+                            _useSendInputFallback = true;
+                            break;
+                        }
                         if (++noChange >= 3)
                         {
                             // The page stopped moving: we reached the end.
@@ -222,17 +223,68 @@ public sealed class LongCaptureSession
         return last;
     }
 
-    private bool IsCursorInScrollTarget()
-        => GetCursorPos(out var pt) && _rect.Contains(pt.X, pt.Y) && (_panelRect.Width <= 0 || !_panelRect.Contains(pt.X, pt.Y));
-
-    private static void SendWheel(int delta)
+    private void SendWheel(int delta)
     {
+        if (!_useSendInputFallback && TryPostWheelToRegion(delta))
+        {
+            return;
+        }
+        SendWheelWithCursorRestore(delta);
+    }
+
+    /// <summary>
+    /// Posts <c>WM_MOUSEWHEEL</c> directly to the window at the center of the capture region so the target
+    /// scrolls even when the mouse cursor is outside the capture region (e.g. hovering over the "完成" button).
+    /// </summary>
+    private bool TryPostWheelToRegion(int delta)
+    {
+        var (targetX, targetY) = GetScrollTargetPoint();
+        var hwnd = WindowFromPoint(new POINT { X = targetX, Y = targetY });
+        if (hwnd == IntPtr.Zero) return false;
+
+        var stepDelta = delta < 0 ? -120 : 120;
+        var steps = Math.Max(1, Math.Abs(delta) / 120);
+        var wParam = (IntPtr)(uint)((ushort)(short)stepDelta << 16);
+        var lParam = (IntPtr)(uint)(((targetY & 0xFFFF) << 16) | (targetX & 0xFFFF));
+
+        for (var i = 0; i < steps; i++)
+        {
+            if (!PostMessageW(hwnd, WM_MOUSEWHEEL, wParam, lParam))
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Fallback for windows that ignore posted <c>WM_MOUSEWHEEL</c>: briefly places the cursor over the
+    /// target point, injects hardware <c>MOUSEEVENTF_WHEEL</c>, and restores the cursor to its original position.
+    /// </summary>
+    private void SendWheelWithCursorRestore(int delta)
+    {
+        // Do not touch the cursor while the user is holding the left mouse button (e.g. clicking Finish/Cancel).
+        if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0) return;
+
+        var (targetX, targetY) = GetScrollTargetPoint();
+        var hasSaved = GetCursorPos(out var savedPt);
+        var restoreCursor = hasSaved && (!_rect.Contains(savedPt.X, savedPt.Y) || (_panelRect.Width > 0 && _panelRect.Contains(savedPt.X, savedPt.Y)));
+
+        if (restoreCursor)
+        {
+            SetCursorPos(targetX, targetY);
+        }
+
         var input = new INPUT
         {
             type = INPUT_MOUSE,
             u = new INPUTUNION { mi = new MOUSEINPUT { mouseData = delta, dwFlags = MOUSEEVENTF_WHEEL } },
         };
         SendInput(1, [input], System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
+
+        if (restoreCursor)
+        {
+            Thread.Sleep(15);
+            SetCursorPos(savedPt.X, savedPt.Y);
+        }
     }
 
     private static bool SamePixels(Bgra32Image a, Bgra32Image b)
