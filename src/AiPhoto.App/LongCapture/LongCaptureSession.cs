@@ -26,6 +26,7 @@ public sealed class LongCaptureSession
 
     private LongCaptureFrame? _frame;
     private LongCapturePanel? _panel;
+    private PixelRect _panelRect;
     private volatile bool _autoScroll;
     private volatile bool _finishRequested;
     private bool _completed;
@@ -68,8 +69,15 @@ public sealed class LongCaptureSession
         _autoScroll = on;
         if (on)
         {
-            // Wheel events go to the window under the cursor: park the cursor in the region.
-            SetCursorPos(_rect.X + _rect.Width / 2, _rect.Y + _rect.Height / 2);
+            // Wheel events go to the window under the cursor: park the cursor in the region once when starting.
+            // Never trap or re-center the cursor afterwards so the user can freely move to the panel to click Finish.
+            var targetX = _rect.X + _rect.Width / 2;
+            var targetY = _rect.Y + _rect.Height / 2;
+            if (_panelRect.Width > 0 && _panelRect.Contains(targetX, targetY))
+            {
+                targetY = _rect.Y + Math.Max(10, _rect.Height / 4);
+            }
+            SetCursorPos(targetX, targetY);
         }
     }
 
@@ -84,6 +92,7 @@ public sealed class LongCaptureSession
         else if (_rect.X - size.Width - 8 >= monitor.X) { x = _rect.X - size.Width - 8; y = _rect.Y; }
         else { x = _rect.Right - size.Width; y = Math.Min(_rect.Bottom + 8, monitor.Bottom - size.Height); }
         y = Math.Clamp(y, monitor.Y, Math.Max(monitor.Y, monitor.Bottom - size.Height));
+        _panelRect = new PixelRect(x - 6, y - 6, size.Width + 12, size.Height + 12);
         PhysicalPlacement.Place(_panel, new PixelRect(x, y, size.Width, size.Height));
     }
 
@@ -107,9 +116,22 @@ public sealed class LongCaptureSession
 
             while (!ct.IsCancellationRequested && !_finishRequested)
             {
+                if ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0)
+                {
+                    _ = _dispatcher.BeginInvoke(Cancel);
+                    return;
+                }
+
                 Bgra32Image? frame;
                 if (_autoScroll)
                 {
+                    // If the user moved the mouse outside the capture region or onto the control panel
+                    // (e.g. to click "完成" / "取消"), pause wheel injection and never pull the cursor back.
+                    if (!IsCursorInScrollTarget())
+                    {
+                        await Task.Delay(60, ct);
+                        continue;
+                    }
                     SendWheel(-120 * notches);
                     frame = await CaptureSettledAsync(capturer, settle, ct);
                 }
@@ -183,9 +205,15 @@ public sealed class LongCaptureSession
     {
         await Task.Delay(settleMs / 2, ct);
         var last = capturer.Capture(_rect);
-        for (var i = 0; i < 12; i++)
+        for (var i = 0; i < 12 && !_finishRequested; i++)
         {
+            if ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0)
+            {
+                _ = _dispatcher.BeginInvoke(Cancel);
+                return last;
+            }
             await Task.Delay(Math.Max(30, settleMs / 3), ct);
+            if (_finishRequested) break;
             var next = capturer.Capture(_rect);
             if (next is null) continue;
             if (last is not null && SamePixels(last, next)) return next;
@@ -194,12 +222,11 @@ public sealed class LongCaptureSession
         return last;
     }
 
-    private void SendWheel(int delta)
-    {
-        // Make sure the cursor is still over the region (the user may have moved it).
-        if (GetCursorPos(out var pt) && !_rect.Contains(pt.X, pt.Y))
-            SetCursorPos(_rect.X + _rect.Width / 2, _rect.Y + _rect.Height / 2);
+    private bool IsCursorInScrollTarget()
+        => GetCursorPos(out var pt) && _rect.Contains(pt.X, pt.Y) && (_panelRect.Width <= 0 || !_panelRect.Contains(pt.X, pt.Y));
 
+    private static void SendWheel(int delta)
+    {
         var input = new INPUT
         {
             type = INPUT_MOUSE,

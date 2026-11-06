@@ -111,8 +111,12 @@ internal static partial class NativeMethods
     public static partial int DwmGetWindowAttributeInt(IntPtr hwnd, int attribute, out int value, int size);
 
     // ---------------------------------------------------------------- input (long capture auto scroll)
+    public const int VK_ESCAPE = 0x1B;
     public const uint INPUT_MOUSE = 0;
     public const uint MOUSEEVENTF_WHEEL = 0x0800;
+
+    [LibraryImport("user32.dll")]
+    public static partial short GetAsyncKeyState(int vKey);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct MOUSEINPUT
