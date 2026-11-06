@@ -14,6 +14,7 @@ using AiPhoto.App.Diagnostics;
 using AiPhoto.App.Imaging;
 using AiPhoto.App.Services;
 using AiPhoto.Core.Imaging;
+using AiPhoto.Core.Ocr;
 using AiPhoto.Core.Snapping;
 using Microsoft.Win32;
 using static AiPhoto.App.Native.NativeMethods;
@@ -69,11 +70,19 @@ public partial class CaptureWindow : Window
     private ResizeHandle _resizeHandle;
     private AnnotationTool _tool = AnnotationTool.None;
     private Annotation? _drawing;
+    private Annotation? _editingAnnotation;
+    private Annotation? _editingBaseline;
+    private AnnotationHandle _editingHandle;
+    private List<Annotation>? _editingUndoSnapshot;
+    private bool _editingMoved;
+    private TextAnnotation? _editingTextTarget;
     private Point _textPosition;
     private Point _lastMouse;
+    private QrCodeResult? _detectedQr;
+    private int _qrScanVersion;
     private bool _closing;
 
-    private enum Phase { Hover, Dragging, Selected, Moving, Resizing, Drawing }
+    private enum Phase { Hover, Dragging, Selected, Moving, Resizing, Drawing, EditingAnnotation }
 
     internal CaptureWindow(ScreenSnapshot snapshot, CaptureIntent mode, IAppHost host, IReadOnlyList<WindowSnapTarget> windows)
     {
@@ -89,6 +98,7 @@ public partial class CaptureWindow : Window
             StrokeWidth = settings.StrokeWidth,
             FontSize = settings.FontSize,
             MosaicBlockSize = settings.MosaicBlockSize,
+            BlurRadius = settings.BlurRadius,
             FontFamily = host.Settings.Translation.OverlayFontFamily,
         };
 
@@ -141,9 +151,15 @@ public partial class CaptureWindow : Window
             [AnnotationTool.Rectangle] = ToolRectangle, [AnnotationTool.Ellipse] = ToolEllipse,
             [AnnotationTool.Arrow] = ToolArrow, [AnnotationTool.Line] = ToolLine, [AnnotationTool.Pen] = ToolPen,
             [AnnotationTool.Highlighter] = ToolHighlighter, [AnnotationTool.Text] = ToolText,
-            [AnnotationTool.Mosaic] = ToolMosaic, [AnnotationTool.Number] = ToolNumber,
+            [AnnotationTool.Mosaic] = ToolMosaic, [AnnotationTool.Blur] = ToolBlur,
+            [AnnotationTool.Number] = ToolNumber,
         };
-        _document.Changed += (_, _) => UpdateUndoButtons();
+        _document.Changed += (_, _) =>
+        {
+            UpdateUndoButtons();
+            BuildPropertyBar();
+            if (ToolbarHost.IsVisible) ShowToolbar();
+        };
         UpdateUndoButtons();
 
         TextEditor.PreviewKeyDown += OnTextEditorKeyDown;
@@ -209,6 +225,7 @@ public partial class CaptureWindow : Window
         _scale = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
         PixelScale.ScaleX = PixelScale.ScaleY = 1.0 / _scale;
         Adorner.DpiScale = _scale;
+        Layer.DpiScale = _scale;
 
         // Re-apply the physical bounds in case WPF adjusted the size during its own initialisation.
         var vb = _snapshot.VirtualBounds;
@@ -269,6 +286,35 @@ public partial class CaptureWindow : Window
         if (IsOnToolbar(e)) return;
         if (TextEditor.IsVisible) { CommitText(); return; }
         var p = CanvasPoint(e);
+
+        if (_phase == Phase.Selected && _selection is { } sel && sel.Contains(p))
+        {
+            var (hitTarget, hitHandle) = _document.HitTest(p, 7 * _scale, 5 * _scale, _tool);
+            if (hitTarget is not null)
+            {
+                if (e.ClickCount == 2 && hitTarget is TextAnnotation existingText)
+                {
+                    BeginTextEdit(existingText.Position, existingText);
+                    return;
+                }
+
+                _document.Selected = hitTarget;
+                _editingAnnotation = hitTarget;
+                _editingBaseline = hitTarget.Clone();
+                _editingHandle = hitHandle;
+                _editingUndoSnapshot = _document.CreateSnapshot();
+                _editingMoved = false;
+                _dragStart = p;
+                _phase = Phase.EditingAnnotation;
+                CaptureMouse();
+                return;
+            }
+        }
+
+        if (_document.Selected is not null)
+        {
+            _document.Selected = null;
+        }
 
         if (e.ClickCount == 2 && _phase == Phase.Selected && _tool == AnnotationTool.None && _selection!.Value.Contains(p))
         {
@@ -366,6 +412,22 @@ public partial class CaptureWindow : Window
                 Layer.InvalidateVisual();
                 break;
 
+            case Phase.EditingAnnotation:
+                if (_editingAnnotation is not null && _editingBaseline is not null)
+                {
+                    var delta = p - _dragStart;
+                    if (!_editingMoved && (Math.Abs(delta.X) >= 1 || Math.Abs(delta.Y) >= 1))
+                    {
+                        _editingMoved = true;
+                    }
+                    if (_editingMoved)
+                    {
+                        _editingAnnotation.ApplyDrag(_editingBaseline, _editingHandle, delta, shift);
+                        Layer.InvalidateVisual();
+                    }
+                }
+                break;
+
             case Phase.Selected:
                 UpdateCursor(p);
                 break;
@@ -396,15 +458,29 @@ public partial class CaptureWindow : Window
             case Phase.Moving:
             case Phase.Resizing:
                 _phase = Phase.Selected;
+                ScanSelectionQrCodeAsync();
                 ShowToolbar();
                 break;
 
             case Phase.Drawing:
-                if (_drawing is { IsValid: true }) _document.Add(_drawing);
+                if (_drawing is { IsValid: true }) _document.Add(_drawing, select: true);
                 _drawing = null;
                 Layer.Preview = null;
                 Layer.InvalidateVisual();
                 _phase = Phase.Selected;
+                break;
+
+            case Phase.EditingAnnotation:
+                if (_editingMoved && _editingUndoSnapshot is not null)
+                {
+                    _document.RecordSnapshot(_editingUndoSnapshot);
+                }
+                _editingAnnotation = null;
+                _editingBaseline = null;
+                _editingUndoSnapshot = null;
+                _editingMoved = false;
+                _phase = Phase.Selected;
+                UpdateCursor(_lastMouse);
                 break;
         }
     }
@@ -420,6 +496,21 @@ public partial class CaptureWindow : Window
                 Layer.Preview = null;
                 Layer.InvalidateVisual();
                 _phase = Phase.Selected;
+                break;
+            case Phase.EditingAnnotation:
+                if (_editingAnnotation is not null && _editingBaseline is not null)
+                {
+                    _editingAnnotation.ApplyDrag(_editingBaseline, AnnotationHandle.Move, new Vector(0, 0), false);
+                    Layer.InvalidateVisual();
+                }
+                _editingAnnotation = null;
+                _editingBaseline = null;
+                _editingUndoSnapshot = null;
+                _editingMoved = false;
+                _phase = Phase.Selected;
+                break;
+            case Phase.Selected when _document.Selected is not null:
+                _document.Selected = null;
                 break;
             case Phase.Selected when _tool != AnnotationTool.None:
                 SelectTool(AnnotationTool.None);
@@ -440,12 +531,16 @@ public partial class CaptureWindow : Window
         switch (_mode)
         {
             case CaptureIntent.Translate:
-                Pin(translate: true);
+                Pin(PinMode.Translate);
+                return;
+            case CaptureIntent.Ocr:
+                Pin(PinMode.Ocr);
                 return;
             case CaptureIntent.LongCapture:
                 StartLongCapture();
                 return;
         }
+        ScanSelectionQrCodeAsync();
         ShowToolbar();
         UpdateCursor(_lastMouse);
     }
@@ -454,6 +549,9 @@ public partial class CaptureWindow : Window
     {
         _selection = null;
         _selectionFromSnap = false;
+        _detectedQr = null;
+        Interlocked.Increment(ref _qrScanVersion);
+        QrBanner.Visibility = Visibility.Collapsed;
         _document.Clear();
         SelectTool(AnnotationTool.None);
         Adorner.Selection = null;
@@ -678,6 +776,7 @@ public partial class CaptureWindow : Window
         {
             _hoverLevel = Math.Clamp(_hoverLevel + delta, 0, _hoverCandidates.Count - 1);
             SetSelection(_hoverCandidates[_hoverLevel].Rect.ToRect(), fromSnap: true);
+            ScanSelectionQrCodeAsync();
             ShowToolbar();
             return true;
         }
@@ -706,6 +805,24 @@ public partial class CaptureWindow : Window
 
     private void UpdateCursor(Point p)
     {
+        if (_selection?.Contains(p) == true)
+        {
+            var (hitTarget, hitHandle) = _document.HitTest(p, 7 * _scale, 5 * _scale, _tool);
+            if (hitTarget is not null)
+            {
+                Cursor = hitHandle switch
+                {
+                    AnnotationHandle.TopLeft or AnnotationHandle.BottomRight => Cursors.SizeNWSE,
+                    AnnotationHandle.TopRight or AnnotationHandle.BottomLeft => Cursors.SizeNESW,
+                    AnnotationHandle.Top or AnnotationHandle.Bottom => Cursors.SizeNS,
+                    AnnotationHandle.Left or AnnotationHandle.Right => Cursors.SizeWE,
+                    AnnotationHandle.StartPoint or AnnotationHandle.EndPoint => Cursors.Cross,
+                    _ => Cursors.SizeAll,
+                };
+                return;
+            }
+        }
+
         if (_tool != AnnotationTool.None)
         {
             Cursor = _selection?.Contains(p) == true ? (_tool == AnnotationTool.Text ? Cursors.IBeam : Cursors.Cross) : Cursors.Arrow;
@@ -861,6 +978,10 @@ public partial class CaptureWindow : Window
     {
         CommitText();
         _tool = tool;
+        if (tool != AnnotationTool.None && _document.Selected is { } sel && sel.Kind != tool)
+        {
+            _document.Selected = null;
+        }
         foreach (var (t, button) in _toolButtons) button.IsChecked = t == tool;
         Adorner.ShowHandles = tool == AnnotationTool.None;
         Adorner.InvalidateVisual();
@@ -873,26 +994,35 @@ public partial class CaptureWindow : Window
     {
         SizePanel.Children.Clear();
         ColorPanel.Children.Clear();
-        if (_tool == AnnotationTool.None)
+        var selected = _document.Selected;
+        var activeKind = selected?.Kind ?? _tool;
+        if (activeKind == AnnotationTool.None)
         {
             PropertyBar.Visibility = Visibility.Collapsed;
             return;
         }
         PropertyBar.Visibility = Visibility.Visible;
 
-        // Size options depend on the tool: stroke width, font size or mosaic block size.
-        (double Value, double Dot)[] sizes = _tool switch
+        DeleteSeparator.Visibility = selected is not null ? Visibility.Visible : Visibility.Collapsed;
+        DeleteSelectedButton.Visibility = selected is not null ? Visibility.Visible : Visibility.Collapsed;
+
+        // Size options depend on the tool: stroke width, font size, mosaic block size, or blur radius.
+        (double Value, double Dot)[] sizes = activeKind switch
         {
             AnnotationTool.Text or AnnotationTool.Number => [(14, 4), (20, 7), (30, 10)],
             AnnotationTool.Mosaic => [(6, 4), (10, 7), (18, 10)],
+            AnnotationTool.Blur => [(6, 4), (12, 7), (22, 10)],
             _ => [(2, 4), (4, 7), (8, 10)],
         };
-        double current = _tool switch
-        {
-            AnnotationTool.Text or AnnotationTool.Number => _style.FontSize,
-            AnnotationTool.Mosaic => _style.MosaicBlockSize,
-            _ => _style.StrokeWidth,
-        };
+        double current = selected is not null
+            ? selected.GetSizeValue()
+            : activeKind switch
+            {
+                AnnotationTool.Text or AnnotationTool.Number => _style.FontSize,
+                AnnotationTool.Mosaic => _style.MosaicBlockSize,
+                AnnotationTool.Blur => _style.BlurRadius,
+                _ => _style.StrokeWidth,
+            };
         var nearest = sizes.MinBy(s => Math.Abs(s.Value - current)).Value;
         foreach (var (value, dot) in sizes)
         {
@@ -906,25 +1036,29 @@ public partial class CaptureWindow : Window
             };
             rb.Checked += (_, _) =>
             {
-                switch (_tool)
+                switch (activeKind)
                 {
                     case AnnotationTool.Text or AnnotationTool.Number: _style.FontSize = value; break;
                     case AnnotationTool.Mosaic: _style.MosaicBlockSize = (int)value; break;
+                    case AnnotationTool.Blur: _style.BlurRadius = (int)value; break;
                     default: _style.StrokeWidth = value; break;
+                }
+                if (_document.Selected is { } s && s.Kind == activeKind && Math.Abs(s.GetSizeValue() - value) > 0.01)
+                {
+                    _document.MutateSelected(a => a.SetSizeValue(value));
                 }
             };
             SizePanel.Children.Add(rb);
         }
-        if (Math.Abs(nearest - current) > 0.01)
-        {
-            // Snap the style to the visible option.
-            ((RadioButton)SizePanel.Children[Array.FindIndex(sizes, s => s.Value == nearest)]).IsChecked = false;
-            ((RadioButton)SizePanel.Children[Array.FindIndex(sizes, s => s.Value == nearest)]).IsChecked = true;
-        }
 
-        var colorVisible = _tool != AnnotationTool.Mosaic;
+        var colorVisible = activeKind is not (AnnotationTool.Mosaic or AnnotationTool.Blur);
+        ColorSeparator.Visibility = colorVisible ? Visibility.Visible : Visibility.Collapsed;
         ColorPanel.Visibility = colorVisible ? Visibility.Visible : Visibility.Collapsed;
         if (!colorVisible) return;
+
+        var activeColor = selected is { SupportsColor: true } sc
+            ? Color.FromRgb(sc.Color.R, sc.Color.G, sc.Color.B)
+            : _style.Color;
         foreach (var color in Palette)
         {
             var rb = new RadioButton
@@ -932,11 +1066,27 @@ public partial class CaptureWindow : Window
                 Style = (Style)FindResource("SwatchButton"),
                 GroupName = "color",
                 Background = new SolidColorBrush(color),
-                IsChecked = color == _style.Color,
+                IsChecked = color == activeColor,
             };
-            rb.Checked += (_, _) => _style.Color = color;
+            rb.Checked += (_, _) =>
+            {
+                _style.Color = color;
+                if (_document.Selected is { SupportsColor: true } s)
+                {
+                    var curRgb = Color.FromRgb(s.Color.R, s.Color.G, s.Color.B);
+                    if (curRgb != color)
+                    {
+                        _document.MutateSelected(a => a.Color = color);
+                    }
+                }
+            };
             ColorPanel.Children.Add(rb);
         }
+    }
+
+    private void OnDeleteSelectedAnnotation(object sender, RoutedEventArgs e)
+    {
+        _document.RemoveSelected();
     }
 
     private void UpdateUndoButtons()
@@ -951,25 +1101,95 @@ public partial class CaptureWindow : Window
     private void OnCopy(object sender, RoutedEventArgs e) => CopyAndClose();
     private void OnSave(object sender, RoutedEventArgs e) => SaveAs();
     private void OnSaveHdr(object sender, RoutedEventArgs e) => SaveHdr();
-    private void OnPin(object sender, RoutedEventArgs e) => Pin(translate: false);
-    private void OnTranslate(object sender, RoutedEventArgs e) => Pin(translate: true);
+    private void OnPin(object sender, RoutedEventArgs e) => Pin(PinMode.None);
+    private void OnTranslate(object sender, RoutedEventArgs e) => Pin(PinMode.Translate);
+    private void OnOcr(object sender, RoutedEventArgs e) => Pin(PinMode.Ocr);
     private void OnLongCapture(object sender, RoutedEventArgs e) => StartLongCapture();
+
+    // ------------------------------------------------------------------ QR banner
+
+    private async void ScanSelectionQrCodeAsync()
+    {
+        var version = Interlocked.Increment(ref _qrScanVersion);
+        var rect = SelectionPixels;
+        if (rect.Width < 16 || rect.Height < 16)
+        {
+            _detectedQr = null;
+            QrBanner.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        try
+        {
+            var crop = _snapshot.CropSdr(rect);
+            var codes = await Task.Run(() => QrCodeScanner.Scan(crop));
+            if (_closing || version != _qrScanVersion || _phase == Phase.Hover) return;
+
+            if (codes.Count == 0)
+            {
+                _detectedQr = null;
+                QrBanner.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                _detectedQr = codes[0];
+                QrBannerBadge.Text = _detectedQr.Format;
+                QrBannerText.Text = _detectedQr.Text.Replace('\r', ' ').Replace('\n', ' ');
+                QrBannerOpenButton.Visibility = _detectedQr.IsHttpUrl ? Visibility.Visible : Visibility.Collapsed;
+                QrBanner.Visibility = Visibility.Visible;
+            }
+
+            if (ToolbarHost.IsVisible) ShowToolbar();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"QR scan failed: {ex.Message}");
+        }
+    }
+
+    private void OnCopyQrBanner(object sender, RoutedEventArgs e)
+    {
+        if (_detectedQr is null) return;
+        WpfImaging.CopyTextToClipboard(_detectedQr.Text);
+        _host.Notify($"已复制{_detectedQr.Format}内容", _detectedQr.Text);
+        CloseCapture();
+    }
+
+    private void OnOpenQrBannerUrl(object sender, RoutedEventArgs e)
+    {
+        if (_detectedQr is null || !QrCodeScanner.TryGetHttpUri(_detectedQr.Text, out var uri) || uri is null) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+            CloseCapture();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Open QR URL failed: {ex.Message}");
+        }
+    }
 
     // ------------------------------------------------------------------ text tool
 
-    private void BeginTextEdit(Point p)
+    private void BeginTextEdit(Point p, TextAnnotation? existing = null)
     {
-        _textPosition = p;
-        var ui = ToUi(p);
-        TextEditor.Text = "";
-        TextEditor.FontSize = _style.FontSize / _scale;
-        TextEditor.FontFamily = new FontFamily(_style.FontFamily);
+        _editingTextTarget = existing;
+        _textPosition = existing?.Position ?? p;
+        var ui = ToUi(_textPosition);
+        var fontSize = existing?.FontSize ?? _style.FontSize;
+        var fontFamily = existing?.FontFamily ?? _style.FontFamily;
+        var color = existing?.Color ?? _style.Color;
+
+        TextEditor.Text = existing?.Text ?? "";
+        TextEditor.FontSize = fontSize / _scale;
+        TextEditor.FontFamily = new FontFamily(fontFamily);
         TextEditor.FontWeight = FontWeights.SemiBold;
-        TextEditor.Foreground = new SolidColorBrush(_style.Color);
+        TextEditor.Foreground = new SolidColorBrush(color);
         Canvas.SetLeft(TextEditor, ui.X - 1);
         Canvas.SetTop(TextEditor, ui.Y - 1);
         TextEditor.Visibility = Visibility.Visible;
         TextEditor.Focus();
+        TextEditor.SelectAll();
     }
 
     private void OnTextEditorKeyDown(object sender, KeyEventArgs e)
@@ -990,16 +1210,33 @@ public partial class CaptureWindow : Window
     {
         if (!TextEditor.IsVisible) return;
         var text = TextEditor.Text;
+        var editing = _editingTextTarget;
+        _editingTextTarget = null;
         TextEditor.Visibility = Visibility.Collapsed;
-        if (!string.IsNullOrWhiteSpace(text))
+
+        if (editing is not null)
         {
-            _document.Add(new TextAnnotation(_textPosition, text, _style.Color, _style.FontSize, _style.FontFamily));
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                _document.Selected = editing;
+                _document.RemoveSelected();
+            }
+            else if (editing.Text != text)
+            {
+                _document.Selected = editing;
+                _document.MutateSelected(a => ((TextAnnotation)a).Text = text);
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(text))
+        {
+            _document.Add(new TextAnnotation(_textPosition, text, _style.Color, _style.FontSize, _style.FontFamily), select: true);
         }
         Focus();
     }
 
     private void CancelText()
     {
+        _editingTextTarget = null;
         TextEditor.Visibility = Visibility.Collapsed;
         Focus();
     }
@@ -1029,11 +1266,15 @@ public partial class CaptureWindow : Window
         switch (e.Key)
         {
             case Key.Escape: CloseCapture(); break;
+            case Key.Delete or Key.Back when _document.Selected is not null:
+                _document.RemoveSelected();
+                break;
             case Key.Enter when _selection is not null: CopyAndClose(); break;
             case Key.C when ctrl && _selection is not null: CopyAndClose(); break;
             case Key.S when ctrl && _selection is not null: SaveAs(); break;
-            case Key.T when ctrl && _selection is not null: Pin(translate: true); break;
-            case Key.P when ctrl && _selection is not null: Pin(translate: false); break;
+            case Key.T when ctrl && _selection is not null: Pin(PinMode.Translate); break;
+            case Key.O when ctrl && _selection is not null: Pin(PinMode.Ocr); break;
+            case Key.P when ctrl && _selection is not null: Pin(PinMode.None); break;
             case Key.Z when ctrl && shift: _document.Redo(); break;
             case Key.Z when ctrl: _document.Undo(); break;
             case Key.Y when ctrl: _document.Redo(); break;
@@ -1059,16 +1300,24 @@ public partial class CaptureWindow : Window
         {
             Key.R => AnnotationTool.Rectangle, Key.E => AnnotationTool.Ellipse, Key.A => AnnotationTool.Arrow,
             Key.L => AnnotationTool.Line, Key.P => AnnotationTool.Pen, Key.H => AnnotationTool.Highlighter,
-            Key.T => AnnotationTool.Text, Key.M => AnnotationTool.Mosaic, Key.N => AnnotationTool.Number,
+            Key.T => AnnotationTool.Text, Key.M => AnnotationTool.Mosaic, Key.B => AnnotationTool.Blur,
+            Key.N => AnnotationTool.Number,
             _ => null,
         };
         if (tool is { } t) SelectTool(_tool == t ? AnnotationTool.None : t);
     }
 
-    /// <summary>Arrow keys: move the cursor by one pixel while hovering; move (or with Shift, resize) the selection.</summary>
+    /// <summary>Arrow keys: move the cursor by one pixel while hovering; nudge the selected annotation or selection.</summary>
     private void Nudge(Key key, bool shift)
     {
         var (dx, dy) = key switch { Key.Left => (-1, 0), Key.Right => (1, 0), Key.Up => (0, -1), _ => (0, 1) };
+        if (_phase == Phase.Selected && _document.Selected is { } selAnn)
+        {
+            var step = shift ? 5 : 1;
+            var baseline = selAnn.Clone();
+            _document.MutateSelected(a => a.ApplyDrag(baseline, AnnotationHandle.Move, new Vector(dx * step, dy * step), false));
+            return;
+        }
         if (_phase == Phase.Selected && _selection is { } s)
         {
             SetSelection(shift
@@ -1209,13 +1458,13 @@ public partial class CaptureWindow : Window
         }
     }
 
-    private void Pin(bool translate)
+    private void Pin(PinMode mode)
     {
         if (_selection is null) return;
         var image = ComposeResult();
         var screenRect = SelectionOnScreen;
         CloseCapture();
-        _host.ShowPin(image, screenRect, translate);
+        _host.ShowPin(image, screenRect, mode);
     }
 
     private void StartLongCapture()

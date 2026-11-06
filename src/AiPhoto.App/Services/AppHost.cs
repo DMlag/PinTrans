@@ -120,12 +120,15 @@ public sealed class AppHost : IAppHost, IDisposable
         }
     }
 
-    public void ShowPin(Bgra32Image image, PixelRect screenRect, bool translate)
+    public void ShowPin(Bgra32Image image, PixelRect screenRect, PinMode mode = PinMode.None)
     {
-        var pin = new PinWindow(image, screenRect, this, translate);
+        var pin = new PinWindow(image, screenRect, this, mode);
         pin.Show();
         pin.Activate();
     }
+
+    public void ShowPin(Bgra32Image image, PixelRect screenRect, bool translate)
+        => ShowPin(image, screenRect, translate ? PinMode.Translate : PinMode.None);
 
     public void StartLongCapture(PixelRect screenRect)
     {
@@ -259,6 +262,7 @@ public sealed class AppHost : IAppHost, IDisposable
         var h = Settings.Hotkeys;
         Register(h.Capture, "截图", () => StartCapture(CaptureIntent.Normal));
         Register(h.CaptureAndTranslate, "截图翻译", () => StartCapture(CaptureIntent.Translate));
+        Register(h.CaptureAndOcr, "截图识字/扫码", () => StartCapture(CaptureIntent.Ocr));
         Register(h.LongCapture, "长截图", () => StartCapture(CaptureIntent.LongCapture));
         Register(h.CaptureFullScreen, "全屏截图", CaptureFullScreenToClipboard);
 
@@ -290,6 +294,7 @@ public sealed class AppHost : IAppHost, IDisposable
         var menu = new ContextMenu();
         menu.Items.Add(MenuItem("截图", h.Capture, () => StartCaptureDeferred(CaptureIntent.Normal)));
         menu.Items.Add(MenuItem("截图并翻译", h.CaptureAndTranslate, () => StartCaptureDeferred(CaptureIntent.Translate)));
+        menu.Items.Add(MenuItem("截图离线识字 / 扫码 (OCR)", h.CaptureAndOcr, () => StartCaptureDeferred(CaptureIntent.Ocr)));
         menu.Items.Add(MenuItem("长截图", h.LongCapture, () => StartCaptureDeferred(CaptureIntent.LongCapture)));
         menu.Items.Add(MenuItem("全屏截图到剪贴板", h.CaptureFullScreen, CaptureFullScreenToClipboard));
         menu.Items.Add(new Separator());

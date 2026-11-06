@@ -35,6 +35,7 @@ public sealed class HotkeySettings
 {
     public string Capture { get; set; } = "F1";
     public string CaptureAndTranslate { get; set; } = "F2";
+    public string CaptureAndOcr { get; set; } = "F3";
     public string LongCapture { get; set; } = "Ctrl+F1";
     public string CaptureFullScreen { get; set; } = "";
 }
@@ -133,4 +134,5 @@ public sealed class AnnotationSettings
     public double StrokeWidth { get; set; } = 3;
     public double FontSize { get; set; } = 18;
     public int MosaicBlockSize { get; set; } = 10;
+    public int BlurRadius { get; set; } = 12;
 }

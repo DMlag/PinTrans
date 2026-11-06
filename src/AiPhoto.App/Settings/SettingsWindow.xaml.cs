@@ -83,6 +83,7 @@ public partial class SettingsWindow : Window
         ProxyPasswordBox.Password = _settings.Network.ProxyPassword;
         HotkeyCapture.Gesture = Parse(_settings.Hotkeys.Capture);
         HotkeyTranslate.Gesture = Parse(_settings.Hotkeys.CaptureAndTranslate);
+        HotkeyOcr.Gesture = Parse(_settings.Hotkeys.CaptureAndOcr);
         HotkeyLong.Gesture = Parse(_settings.Hotkeys.LongCapture);
         HotkeyFull.Gesture = Parse(_settings.Hotkeys.CaptureFullScreen);
         if (string.IsNullOrWhiteSpace(_settings.Capture.SaveDirectory)) SaveDirBox.Text = AppPaths.DefaultSaveDirectory;
@@ -129,6 +130,7 @@ public partial class SettingsWindow : Window
         _settings.Network.ProxyHost = StripScheme(_settings.Network.ProxyHost ?? "");
         _settings.Hotkeys.Capture = HotkeyCapture.Gesture.ToString();
         _settings.Hotkeys.CaptureAndTranslate = HotkeyTranslate.Gesture.ToString();
+        _settings.Hotkeys.CaptureAndOcr = HotkeyOcr.Gesture.ToString();
         _settings.Hotkeys.LongCapture = HotkeyLong.Gesture.ToString();
         _settings.Hotkeys.CaptureFullScreen = HotkeyFull.Gesture.ToString();
         // Editable combo boxes only push Text on focus loss; read them directly.
@@ -209,7 +211,7 @@ public partial class SettingsWindow : Window
         if (Keyboard.FocusedElement is TextBox tb) tb.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
         CollectUnboundValues();
 
-        var gestures = new[] { HotkeyCapture.Gesture, HotkeyTranslate.Gesture, HotkeyLong.Gesture, HotkeyFull.Gesture }
+        var gestures = new[] { HotkeyCapture.Gesture, HotkeyTranslate.Gesture, HotkeyOcr.Gesture, HotkeyLong.Gesture, HotkeyFull.Gesture }
             .Where(g => !g.IsEmpty).Select(g => g.ToString()).ToList();
         if (gestures.Count != gestures.Distinct(StringComparer.OrdinalIgnoreCase).Count())
         {

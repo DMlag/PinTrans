@@ -236,6 +236,14 @@
                             <ColumnDefinition Width="140" />
                             <ColumnDefinition />
                         </Grid.ColumnDefinitions>
+                        <TextBlock Text="截图离线识字 / 扫码" Style="{StaticResource SettingsLabel}" />
+                        <local:HotkeyBox x:Name="HotkeyOcr" Grid.Column="1" />
+                    </Grid>
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
                         <TextBlock Text="长截图" Style="{StaticResource SettingsLabel}" />
                         <local:HotkeyBox x:Name="HotkeyLong" Grid.Column="1" />
                     </Grid>
@@ -250,8 +258,8 @@
                     <TextBlock Style="{StaticResource HintText}" Margin="140,8,0,0" TextWrapping="Wrap"
                                Text="点击输入框后直接按下组合键即可修改，Backspace 清除。若与其他软件（如 Snipaste 默认 F1）冲突会注册失败并提示。" />
                     <TextBlock Style="{StaticResource HintText}" Margin="140,14,0,0" TextWrapping="Wrap">
-                        截图窗口内快捷键：Enter/双击 复制并完成 · 滚轮 / Tab / Shift+Tab 切换父子控件层级 · Ctrl+S 保存 · Ctrl+T 翻译 · Ctrl+P 贴图 ·
-                        Ctrl+Z/Y 撤销/重做 · R 矩形 · E 椭圆 · A 箭头 · L 直线 · P 画笔 · H 荧光笔 · T 文字 · M 马赛克 · N 序号 · 方向键 微调 · C 复制颜色 · Esc 退出
+                        截图窗口内快捷键：Enter/双击 复制并完成 · 滚轮 / Tab / Shift+Tab 切换父子控件层级 · Ctrl+S 保存 · Ctrl+T 翻译 · Ctrl+O 离线识字/扫码 · Ctrl+P 贴图 ·
+                        Ctrl+Z/Y 撤销/重做 · Delete 删除选中标注 · R 矩形 · E 椭圆 · A 箭头 · L 直线 · P 画笔 · H 荧光笔 · T 文字 · M 马赛克 · B 高斯模糊 · N 序号 · 方向键 微调 · C 复制颜色 · Esc 退出
                     </TextBlock>
                 </StackPanel>
             </TabItem>
@@ -385,6 +393,14 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="马赛克块大小" Style="{StaticResource SettingsLabel}" />
                         <TextBox Grid.Column="1" Text="{Binding Annotation.MosaicBlockSize}" />
+                    </Grid>
+                    <Grid Style="{StaticResource Row}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="140" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="高斯模糊半径" Style="{StaticResource SettingsLabel}" />
+                        <TextBox Grid.Column="1" Text="{Binding Annotation.BlurRadius}" />
                     </Grid>
                     <TextBlock Style="{StaticResource HintText}" Margin="110,6,0,0" Text="截图时在工具栏中修改的颜色/粗细会在本次运行期间保留。" />
                 </StackPanel>

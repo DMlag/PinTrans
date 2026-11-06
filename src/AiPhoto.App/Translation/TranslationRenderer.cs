@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using AiPhoto.App.Imaging;
 using AiPhoto.Core.Imaging;
+using AiPhoto.Core.Ocr;
 using AiPhoto.Core.Translation;
 
 namespace AiPhoto.App.Translation;
@@ -110,12 +111,23 @@ public static class TranslationRenderer
     }
 }
 
-/// <summary>Draws translated blocks over an image; lives in pixel space next to the image.</summary>
+/// <summary>Draws translated blocks, offline OCR line boxes, and QR code highlights over an image in pixel space.</summary>
 public sealed class TranslationLayer : FrameworkElement
 {
+    private static readonly Pen HighlightPen = Freeze(new Pen(new SolidColorBrush(Color.FromArgb(0xDD, 0x2F, 0x7C, 0xF6)), 1.6));
+    private static readonly Pen OcrIdlePen = Freeze(new Pen(new SolidColorBrush(Color.FromArgb(0x66, 0x2F, 0x7C, 0xF6)), 1.0));
+    private static readonly Brush OcrHoverFill = Freeze(new SolidColorBrush(Color.FromArgb(0x28, 0x2F, 0x7C, 0xF6)));
+    private static readonly Pen QrIdlePen = Freeze(new Pen(new SolidColorBrush(Color.FromArgb(0xCC, 0x10, 0xB9, 0x81)), 1.8));
+    private static readonly Brush QrIdleFill = Freeze(new SolidColorBrush(Color.FromArgb(0x22, 0x10, 0xB9, 0x81)));
+    private static readonly Brush QrHoverFill = Freeze(new SolidColorBrush(Color.FromArgb(0x44, 0x10, 0xB9, 0x81)));
+
     private readonly List<RenderedBlock> _blocks = [];
+    private readonly List<OcrLineResult> _ocrLines = [];
+    private readonly List<QrCodeResult> _barcodes = [];
     private bool _showOriginal;
     private RenderedBlock? _highlight;
+    private OcrLineResult? _highlightOcr;
+    private QrCodeResult? _highlightBarcode;
 
     public TranslationLayer()
     {
@@ -123,6 +135,8 @@ public sealed class TranslationLayer : FrameworkElement
     }
 
     public IReadOnlyList<RenderedBlock> Blocks => _blocks;
+    public IReadOnlyList<OcrLineResult> OcrLines => _ocrLines;
+    public IReadOnlyList<QrCodeResult> Barcodes => _barcodes;
 
     public bool ShowOriginal
     {
@@ -136,30 +150,87 @@ public sealed class TranslationLayer : FrameworkElement
         set { if (!ReferenceEquals(_highlight, value)) { _highlight = value; InvalidateVisual(); } }
     }
 
+    public OcrLineResult? HighlightOcr
+    {
+        get => _highlightOcr;
+        set { if (!ReferenceEquals(_highlightOcr, value)) { _highlightOcr = value; InvalidateVisual(); } }
+    }
+
+    public QrCodeResult? HighlightBarcode
+    {
+        get => _highlightBarcode;
+        set { if (!ReferenceEquals(_highlightBarcode, value)) { _highlightBarcode = value; InvalidateVisual(); } }
+    }
+
     public void Add(RenderedBlock block)
     {
         _blocks.Add(block);
         InvalidateVisual();
     }
 
-    public void Clear()
+    public void SetOcrResults(IReadOnlyList<OcrLineResult> lines, IReadOnlyList<QrCodeResult> barcodes)
     {
-        _blocks.Clear();
-        _highlight = null;
+        _ocrLines.Clear();
+        _ocrLines.AddRange(lines);
+        _barcodes.Clear();
+        _barcodes.AddRange(barcodes);
+        _highlightOcr = null;
+        _highlightBarcode = null;
         InvalidateVisual();
     }
 
-    /// <summary>Topmost block at an image-pixel position.</summary>
+    public void Clear()
+    {
+        _blocks.Clear();
+        _ocrLines.Clear();
+        _barcodes.Clear();
+        _highlight = null;
+        _highlightOcr = null;
+        _highlightBarcode = null;
+        InvalidateVisual();
+    }
+
+    /// <summary>Topmost translated block at an image-pixel position.</summary>
     public RenderedBlock? BlockAt(Point p) => _blocks.LastOrDefault(b => b.Area.Contains(p));
+
+    /// <summary>Topmost recognized OCR line at an image-pixel position.</summary>
+    public OcrLineResult? OcrLineAt(Point p)
+        => _ocrLines.LastOrDefault(l => l.Bounds.Inflate(2).Contains((int)Math.Round(p.X), (int)Math.Round(p.Y)));
+
+    /// <summary>Topmost recognized QR/barcode at an image-pixel position.</summary>
+    public QrCodeResult? BarcodeAt(Point p)
+        => _barcodes.LastOrDefault(b => b.Bounds.Inflate(2).Contains((int)Math.Round(p.X), (int)Math.Round(p.Y)));
 
     protected override void OnRender(DrawingContext dc)
     {
-        if (!_showOriginal) TranslationRenderer.Render(dc, _blocks);
+        if (!_showOriginal && _blocks.Count > 0)
+        {
+            TranslationRenderer.Render(dc, _blocks);
+        }
+
+        foreach (var line in _ocrLines)
+        {
+            var r = line.Bounds.Inflate(2).ToRect();
+            var isHovered = ReferenceEquals(line, _highlightOcr);
+            dc.DrawRoundedRectangle(isHovered ? OcrHoverFill : null, isHovered ? HighlightPen : OcrIdlePen, r, 2, 2);
+        }
+
+        foreach (var qr in _barcodes)
+        {
+            var r = qr.Bounds.ToRect();
+            var isHovered = ReferenceEquals(qr, _highlightBarcode);
+            dc.DrawRoundedRectangle(isHovered ? QrHoverFill : QrIdleFill, QrIdlePen, r, 3, 3);
+        }
+
         if (_highlight is not null)
         {
-            var pen = new Pen(new SolidColorBrush(Color.FromArgb(0xCC, 0x2F, 0x7C, 0xF6)), 1.5);
-            pen.Freeze();
-            dc.DrawRectangle(null, pen, _highlight.Area);
+            dc.DrawRectangle(null, HighlightPen, _highlight.Area);
         }
+    }
+
+    private static T Freeze<T>(T f) where T : Freezable
+    {
+        f.Freeze();
+        return f;
     }
 }
