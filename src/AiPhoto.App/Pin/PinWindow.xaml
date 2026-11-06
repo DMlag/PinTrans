@@ -44,7 +44,8 @@
                StaysOpen="True"
                Focusable="False"
                MouseEnter="OnPopupMouseEnter"
-               MouseLeave="OnPopupMouseLeave">
+               MouseLeave="OnPopupMouseLeave"
+               MouseWheel="OnPopupMouseWheel">
             <Border Background="Transparent" Padding="0,4">
                 <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
                     <Border x:Name="StatusPill" Margin="0,0,6,0"
@@ -103,7 +104,8 @@
                StaysOpen="True"
                Focusable="True"
                MouseEnter="OnPopupMouseEnter"
-               MouseLeave="OnPopupMouseLeave">
+               MouseLeave="OnPopupMouseLeave"
+               MouseWheel="OnPopupMouseWheel">
             <Border Background="Transparent" Padding="0,4">
                 <Border x:Name="OcrDrawer" Style="{StaticResource ToolbarBorder}" Padding="8"
                         Visibility="Collapsed" MaxWidth="460" MinWidth="240">

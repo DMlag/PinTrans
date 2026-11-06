@@ -240,8 +240,21 @@ public partial class PinWindow : Window
         RenderOptions.SetBitmapScalingMode(ImageView, _zoom >= 1 ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
     }
 
+    private void OnPopupMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        // Prevent wheel events inside the OCR text drawer or toolbar popup from bubbling up to PinWindow and zooming the image.
+        e.Handled = true;
+    }
+
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
-        => SetZoom(_zoom * (e.Delta > 0 ? 1.1 : 1 / 1.1));
+    {
+        if (e.OriginalSource is DependencyObject d && (IsInside(d, HoverBar) || IsInside(d, OcrDrawer) || IsInside(d, StatusPill)))
+        {
+            e.Handled = true;
+            return;
+        }
+        SetZoom(_zoom * (e.Delta > 0 ? 1.1 : 1 / 1.1));
+    }
 
     // ------------------------------------------------------------------ mouse / keyboard
 
@@ -311,11 +324,20 @@ public partial class PinWindow : Window
 
     private static bool IsInside(DependencyObject child, DependencyObject parent)
     {
-        for (var d = child; d is not null; d = VisualTreeHelper.GetParent(d) ?? LogicalTreeHelper.GetParent(d))
+        for (var d = child; d is not null; d = GetParentSafe(d))
         {
             if (ReferenceEquals(d, parent)) return true;
         }
         return false;
+    }
+
+    private static DependencyObject? GetParentSafe(DependencyObject d)
+    {
+        if (d is Visual or System.Windows.Media.Media3D.Visual3D)
+        {
+            return VisualTreeHelper.GetParent(d) ?? LogicalTreeHelper.GetParent(d);
+        }
+        return LogicalTreeHelper.GetParent(d);
     }
 
     private void OnKeyDown(object sender, KeyEventArgs e)
@@ -327,6 +349,9 @@ public partial class PinWindow : Window
             case Key.Escape: Close(); break;
             case Key.LeftShift or Key.RightShift when !ctrl: Layer.ShowOriginal = true; break;
             case Key.C when ctrl && shift: OnCopyText(this, e); break;
+            case Key.C when ctrl && OcrResultBox.IsKeyboardFocusWithin && OcrResultBox.SelectionLength > 0:
+                OcrResultBox.Copy();
+                break;
             case Key.C when ctrl: OnCopyImage(this, e); break;
             case Key.S when ctrl: OnSave(this, e); break;
             case Key.T when ctrl: _ = TranslateAsync(); break;
