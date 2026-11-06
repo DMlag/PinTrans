@@ -54,6 +54,7 @@ public partial class PinWindow : Window
         InitializeComponent();
 
         FloatingPopup.CustomPopupPlacementCallback = PlaceFloatingPopup;
+        OcrDrawerPopup.CustomPopupPlacementCallback = PlaceOcrDrawerPopup;
 
         ImageView.Source = image.ToBitmapSource();
         ImageView.Width = image.Width;
@@ -75,7 +76,7 @@ public partial class PinWindow : Window
         _hoverHideTimer.Tick += (_, _) =>
         {
             _hoverHideTimer.Stop();
-            if (!IsMouseOver && !FloatingPopup.IsMouseOver && OcrDrawer.Visibility != Visibility.Visible)
+            if (!IsMouseOver && !FloatingPopup.IsMouseOver && !OcrDrawerPopup.IsMouseOver && OcrDrawer.Visibility != Visibility.Visible)
             {
                 HoverBar.Visibility = Visibility.Collapsed;
                 UpdatePopupOpen();
@@ -132,6 +133,7 @@ public partial class PinWindow : Window
             _statusTimer.Stop();
             _hoverHideTimer.Stop();
             FloatingPopup.IsOpen = false;
+            OcrDrawerPopup.IsOpen = false;
         };
     }
 
@@ -153,6 +155,18 @@ public partial class PinWindow : Window
         ];
     }
 
+    private static CustomPopupPlacement[] PlaceOcrDrawerPopup(Size popupSize, Size targetSize, Point offset)
+    {
+        return
+        [
+            // 1. Place directly below the pinned image (HoverBar stays above, so the pinned image is completely unobstructed).
+            new CustomPopupPlacement(new Point(0, targetSize.Height), PopupPrimaryAxis.Horizontal),
+            // 2. If near the bottom of the monitor, place to the right or left of the pinned image.
+            new CustomPopupPlacement(new Point(targetSize.Width + 6, 0), PopupPrimaryAxis.Vertical),
+            new CustomPopupPlacement(new Point(-popupSize.Width - 6, 0), PopupPrimaryAxis.Vertical),
+        ];
+    }
+
     private void OnPopupMouseEnter(object sender, MouseEventArgs e)
     {
         _hoverHideTimer.Stop();
@@ -170,21 +184,31 @@ public partial class PinWindow : Window
         if (_closed || !IsLoaded)
         {
             FloatingPopup.IsOpen = false;
+            OcrDrawerPopup.IsOpen = false;
             return;
         }
-        var shouldOpen = StatusPill.Visibility == Visibility.Visible
-                      || HoverBar.Visibility == Visibility.Visible
-                      || OcrDrawer.Visibility == Visibility.Visible;
-        FloatingPopup.IsOpen = shouldOpen;
-        if (shouldOpen) RepositionPopup();
+        var shouldOpenToolbar = StatusPill.Visibility == Visibility.Visible
+                             || HoverBar.Visibility == Visibility.Visible
+                             || OcrDrawer.Visibility == Visibility.Visible;
+        FloatingPopup.IsOpen = shouldOpenToolbar;
+        OcrDrawerPopup.IsOpen = OcrDrawer.Visibility == Visibility.Visible;
+        if (shouldOpenToolbar || OcrDrawerPopup.IsOpen) RepositionPopup();
     }
 
     private void RepositionPopup()
     {
-        if (!FloatingPopup.IsOpen) return;
-        var offset = FloatingPopup.HorizontalOffset;
-        FloatingPopup.HorizontalOffset = offset + 0.001;
-        FloatingPopup.HorizontalOffset = offset;
+        if (FloatingPopup.IsOpen)
+        {
+            var offset = FloatingPopup.HorizontalOffset;
+            FloatingPopup.HorizontalOffset = offset + 0.001;
+            FloatingPopup.HorizontalOffset = offset;
+        }
+        if (OcrDrawerPopup.IsOpen)
+        {
+            var offset = OcrDrawerPopup.HorizontalOffset;
+            OcrDrawerPopup.HorizontalOffset = offset + 0.001;
+            OcrDrawerPopup.HorizontalOffset = offset;
+        }
     }
 
     // ------------------------------------------------------------------ placement / zoom
@@ -491,6 +515,7 @@ public partial class PinWindow : Window
         }
 
         FloatingPopup.IsOpen = false;
+        OcrDrawerPopup.IsOpen = false;
         Topmost = false;
         var choice = MessageBox.Show(this, _lastError + "\n\n是：重新翻译    否：打开设置    取消：关闭此提示",
             "AiPhoto 提示", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
@@ -573,6 +598,7 @@ public partial class PinWindow : Window
             AddExtension = true,
         };
         FloatingPopup.IsOpen = false;
+        OcrDrawerPopup.IsOpen = false;
         Topmost = false;
         var ok = dialog.ShowDialog(this) == true;
         Topmost = true;

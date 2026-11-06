@@ -36,8 +36,7 @@
         </Canvas>
         </Canvas>
 
-        <!-- Floating controls live in an external Popup anchored above/below the pin window so they never
-             occlude small pinned regions (e.g. a single line of text) and are never clipped by tiny pin bounds. -->
+        <!-- Floating toolbar popup anchored above the pin window so it never occludes small pinned regions. -->
         <Popup x:Name="FloatingPopup"
                PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
                Placement="Custom"
@@ -47,71 +46,83 @@
                MouseEnter="OnPopupMouseEnter"
                MouseLeave="OnPopupMouseLeave">
             <Border Background="Transparent" Padding="0,4">
-                <StackPanel HorizontalAlignment="Right">
-                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
-                        <Border x:Name="StatusPill" Margin="0,0,6,0"
-                                Background="#E6202124" CornerRadius="10" Padding="8,3" Visibility="Collapsed"
-                                MouseLeftButtonDown="OnStatusClick" Cursor="Hand" VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal">
-                                <Path x:Name="Spinner" Width="12" Height="12" Margin="0,0,6,0" Stroke="White" StrokeThickness="2"
-                                      Data="M6,1 A5,5 0 1 1 1,6" RenderTransformOrigin="0.5,0.5" VerticalAlignment="Center">
-                                    <Path.RenderTransform>
-                                        <RotateTransform x:Name="SpinnerRotation" />
-                                    </Path.RenderTransform>
-                                </Path>
-                                <TextBlock x:Name="StatusText" Foreground="White" FontSize="12" TextWrapping="Wrap" MaxWidth="420"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
-
-                        <Border x:Name="HoverBar"
-                                Style="{StaticResource ToolbarBorder}" Padding="2" Visibility="Collapsed" VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal">
-                                <ToggleButton x:Name="OriginalToggle" Style="{StaticResource ToolButton}" Width="28" Height="26"
-                                              Focusable="False" Click="OnToggleOriginal" ToolTip="显示原文（按住 Shift 临时查看）">
-                                    <TextBlock Text="原" FontFamily="{StaticResource UiFont}" FontSize="13" />
-                                </ToggleButton>
-                                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnRunOcr"
-                                        ToolTip="离线文字识别 / 二维码识别 (O)">
-                                    <TextBlock Text="文" FontFamily="{StaticResource UiFont}" FontSize="13" FontWeight="SemiBold" />
-                                </Button>
-                                <ToggleButton x:Name="OcrDrawerToggle" Style="{StaticResource ToolButton}" Width="28" Height="26"
-                                              Focusable="False" Click="OnToggleOcrDrawer" Visibility="Collapsed"
-                                              ToolTip="展开/收起可划选复制的文本面板">
-                                    <TextBlock Text="词" FontFamily="{StaticResource UiFont}" FontSize="13" />
-                                </ToggleButton>
-                                <Button x:Name="OpenQrUrlButton" Style="{StaticResource ToolButton}" Width="28" Height="26"
-                                        Focusable="False" Click="OnOpenQrUrl" Visibility="Collapsed"
-                                        ToolTip="在浏览器中打开二维码链接" Content="&#xE71B;" FontSize="14" Foreground="#FF5FD38D" />
-                                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnCopyText"
-                                        ToolTip="复制全部识别文字 / 译文 (Ctrl+Shift+C)" Content="&#xE8C8;" FontSize="14" />
-                                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnSave"
-                                        ToolTip="另存为 (Ctrl+S)" Content="&#xE74E;" FontSize="14" />
-                                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnRetranslate"
-                                        ToolTip="AI 翻译 / 重新翻译 (Ctrl+T)" Content="&#xE72C;" FontSize="14" />
-                                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnClose"
-                                        ToolTip="关闭 (Esc / 双击)" Content="&#xE711;" FontSize="14" />
-                            </StackPanel>
-                        </Border>
-                    </WrapPanel>
-
-                    <Border x:Name="OcrDrawer" Style="{StaticResource ToolbarBorder}" Margin="0,4,0,0" Padding="8"
-                            Visibility="Collapsed" MaxWidth="460" MinWidth="240">
-                        <StackPanel>
-                            <DockPanel Margin="0,0,0,4">
-                                <TextBlock x:Name="OcrDrawerTitle" Text="识别结果（可自由划选复制）" Foreground="#CCFFFFFF" FontSize="11" VerticalAlignment="Center" />
-                                <Button DockPanel.Dock="Right" Style="{StaticResource ToolButton}" Width="56" Height="22"
-                                        Focusable="False" Click="OnCopyText" ToolTip="复制全部内容">
-                                    <TextBlock Text="复制全部" FontSize="11" />
-                                </Button>
-                            </DockPanel>
-                            <TextBox x:Name="OcrResultBox" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
-                                     VerticalScrollBarVisibility="Auto" MaxHeight="180"
-                                     Background="#1A202124" Foreground="White" BorderBrush="#44FFFFFF" BorderThickness="1"
-                                     Padding="6,4" FontSize="12.5" CaretBrush="White" SelectionBrush="#882F7CF6" />
+                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                    <Border x:Name="StatusPill" Margin="0,0,6,0"
+                            Background="#E6202124" CornerRadius="10" Padding="8,3" Visibility="Collapsed"
+                            MouseLeftButtonDown="OnStatusClick" Cursor="Hand" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <Path x:Name="Spinner" Width="12" Height="12" Margin="0,0,6,0" Stroke="White" StrokeThickness="2"
+                                  Data="M6,1 A5,5 0 1 1 1,6" RenderTransformOrigin="0.5,0.5" VerticalAlignment="Center">
+                                <Path.RenderTransform>
+                                    <RotateTransform x:Name="SpinnerRotation" />
+                                </Path.RenderTransform>
+                            </Path>
+                            <TextBlock x:Name="StatusText" Foreground="White" FontSize="12" TextWrapping="Wrap" MaxWidth="420"
+                                       VerticalAlignment="Center" />
                         </StackPanel>
                     </Border>
-                </StackPanel>
+
+                    <Border x:Name="HoverBar"
+                            Style="{StaticResource ToolbarBorder}" Padding="2" Visibility="Collapsed" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <ToggleButton x:Name="OriginalToggle" Style="{StaticResource ToolButton}" Width="28" Height="26"
+                                          Focusable="False" Click="OnToggleOriginal" ToolTip="显示原文（按住 Shift 临时查看）">
+                                <TextBlock Text="原" FontFamily="{StaticResource UiFont}" FontSize="13" />
+                            </ToggleButton>
+                            <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnRunOcr"
+                                    ToolTip="离线文字识别 / 二维码识别 (O)">
+                                <TextBlock Text="文" FontFamily="{StaticResource UiFont}" FontSize="13" FontWeight="SemiBold" />
+                            </Button>
+                            <ToggleButton x:Name="OcrDrawerToggle" Style="{StaticResource ToolButton}" Width="28" Height="26"
+                                          Focusable="False" Click="OnToggleOcrDrawer" Visibility="Collapsed"
+                                          ToolTip="展开/收起可划选复制的文本面板">
+                                <TextBlock Text="词" FontFamily="{StaticResource UiFont}" FontSize="13" />
+                            </ToggleButton>
+                            <Button x:Name="OpenQrUrlButton" Style="{StaticResource ToolButton}" Width="28" Height="26"
+                                    Focusable="False" Click="OnOpenQrUrl" Visibility="Collapsed"
+                                    ToolTip="在浏览器中打开二维码链接" Content="&#xE71B;" FontSize="14" Foreground="#FF5FD38D" />
+                            <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnCopyText"
+                                    ToolTip="复制全部识别文字 / 译文 (Ctrl+Shift+C)" Content="&#xE8C8;" FontSize="14" />
+                            <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnSave"
+                                    ToolTip="另存为 (Ctrl+S)" Content="&#xE74E;" FontSize="14" />
+                            <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnRetranslate"
+                                    ToolTip="AI 翻译 / 重新翻译 (Ctrl+T)" Content="&#xE72C;" FontSize="14" />
+                            <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnClose"
+                                    ToolTip="关闭 (Esc / 双击)" Content="&#xE711;" FontSize="14" />
+                        </StackPanel>
+                    </Border>
+                </WrapPanel>
+            </Border>
+        </Popup>
+
+        <!-- Separate popup for the OCR selectable text drawer anchored below the pin window so it never covers the pinned image. -->
+        <Popup x:Name="OcrDrawerPopup"
+               PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+               Placement="Custom"
+               AllowsTransparency="True"
+               StaysOpen="True"
+               Focusable="True"
+               MouseEnter="OnPopupMouseEnter"
+               MouseLeave="OnPopupMouseLeave">
+            <Border Background="Transparent" Padding="0,4">
+                <Border x:Name="OcrDrawer" Style="{StaticResource ToolbarBorder}" Padding="8"
+                        Visibility="Collapsed" MaxWidth="460" MinWidth="240">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,4">
+                            <TextBlock x:Name="OcrDrawerTitle" Text="识别结果（可自由划选复制）" FontFamily="{StaticResource UiFont}"
+                                       Foreground="#CCFFFFFF" FontSize="11.5" VerticalAlignment="Center" />
+                            <Button DockPanel.Dock="Right" Style="{StaticResource ToolButton}" Width="60" Height="22"
+                                    Focusable="False" Click="OnCopyText" ToolTip="复制全部内容">
+                                <TextBlock Text="复制全部" FontFamily="{StaticResource UiFont}" FontSize="11.5" />
+                            </Button>
+                        </DockPanel>
+                        <TextBox x:Name="OcrResultBox" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                                 FontFamily="{StaticResource UiFont}"
+                                 VerticalScrollBarVisibility="Auto" MaxHeight="180"
+                                 Background="#1A202124" Foreground="White" BorderBrush="#44FFFFFF" BorderThickness="1"
+                                 Padding="6,4" FontSize="12.5" CaretBrush="White" SelectionBrush="#882F7CF6" />
+                    </StackPanel>
+                </Border>
             </Border>
         </Popup>
     </Grid>

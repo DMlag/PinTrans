@@ -69,11 +69,11 @@
                         <TextBlock x:Name="QrBannerText" Foreground="White" FontSize="12" MaxWidth="280" TextTrimming="CharacterEllipsis"
                                    VerticalAlignment="Center" Margin="0,0,8,0" />
                         <Button Style="{StaticResource ToolButton}" Width="46" Height="24" Click="OnCopyQrBanner" ToolTip="复制二维码内容并完成">
-                            <TextBlock Text="复制" FontSize="11.5" />
+                            <TextBlock Text="复制" FontFamily="{StaticResource UiFont}" FontSize="11.5" />
                         </Button>
                         <Button x:Name="QrBannerOpenButton" Style="{StaticResource ToolButton}" Width="64" Height="24" Margin="4,0,0,0"
                                 Click="OnOpenQrBannerUrl" Visibility="Collapsed" ToolTip="在浏览器中打开链接">
-                            <TextBlock Text="打开链接" FontSize="11.5" Foreground="#FF5FD38D" />
+                            <TextBlock Text="打开链接" FontFamily="{StaticResource UiFont}" FontSize="11.5" Foreground="#FF5FD38D" />
                         </Button>
                     </StackPanel>
                 </Border>
