@@ -263,4 +263,55 @@ public sealed class SettingsStoreTests : IDisposable
         var p = new PlainTextSecretProtector();
         Assert.Equal("abc", p.Unprotect(p.Protect("abc")));
     }
+
+    [Fact]
+    public void DefaultFileNameTemplate_UsesPinTransPrefix()
+    {
+        var s = new AppSettings();
+        Assert.StartsWith("PinTrans_", s.Capture.FileNameTemplate);
+    }
+
+    [Fact]
+    public void UninstallHelper_IsStandaloneExecutable_RejectsDotnetHost()
+    {
+        Assert.False(UninstallHelper.IsStandaloneExecutable(null));
+        Assert.False(UninstallHelper.IsStandaloneExecutable(""));
+        Assert.False(UninstallHelper.IsStandaloneExecutable(@"C:\Program Files\dotnet\dotnet.exe"));
+        Assert.False(UninstallHelper.IsStandaloneExecutable("/usr/share/dotnet/dotnet"));
+        Assert.True(UninstallHelper.IsStandaloneExecutable(@"C:\Tools\PinTrans\PinTrans.exe"));
+    }
+
+    [Fact]
+    public void UninstallHelper_CleanDirectoriesImmediate_RemovesExistingDirectories()
+    {
+        var d1 = Path.Combine(_dir, "data1");
+        var d2 = Path.Combine(_dir, "data2");
+        Directory.CreateDirectory(Path.Combine(d1, "logs"));
+        File.WriteAllText(Path.Combine(d1, "settings.json"), "{}");
+        File.WriteAllText(Path.Combine(d1, "logs", "pintrans.log"), "ok");
+        Directory.CreateDirectory(d2);
+
+        UninstallHelper.CleanDirectoriesImmediate([d1, d2, Path.Combine(_dir, "nonexistent")]);
+
+        Assert.False(Directory.Exists(d1));
+        Assert.False(Directory.Exists(d2));
+    }
+
+    [Fact]
+    public void UninstallHelper_BuildDelayedCleanupArguments_IncludesDirsAndSelfDeleteOnlyWhenStandalone()
+    {
+        var dirs = new[] { @"C:\Users\Test\AppData\Roaming\PinTrans", @"C:\Users\Test\AppData\Local\Temp\.net\PinTrans" };
+
+        var dataOnlyArgs = UninstallHelper.BuildDelayedCleanupArguments(dirs, null);
+        Assert.Contains(@"rmdir /s /q ""C:\Users\Test\AppData\Roaming\PinTrans""", dataOnlyArgs);
+        Assert.Contains(@"rmdir /s /q ""C:\Users\Test\AppData\Local\Temp\.net\PinTrans""", dataOnlyArgs);
+        Assert.DoesNotContain("del /f /q", dataOnlyArgs);
+
+        var dotnetHostArgs = UninstallHelper.BuildDelayedCleanupArguments(dirs, @"C:\Program Files\dotnet\dotnet.exe");
+        Assert.DoesNotContain("del /f /q", dotnetHostArgs);
+
+        var fullUninstallArgs = UninstallHelper.BuildDelayedCleanupArguments(dirs, @"D:\Apps\PinTrans\PinTrans.exe");
+        Assert.Contains(@"del /f /q ""D:\Apps\PinTrans\PinTrans.exe""", fullUninstallArgs);
+        Assert.Contains(@"rmdir ""D:\Apps\PinTrans""", fullUninstallArgs);
+    }
 }

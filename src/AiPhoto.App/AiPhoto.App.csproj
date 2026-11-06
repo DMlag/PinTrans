@@ -4,12 +4,13 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <UseWPF>true</UseWPF>
-    <AssemblyName>AiPhoto</AssemblyName>
+    <AssemblyName>PinTrans</AssemblyName>
     <RootNamespace>AiPhoto.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <AssemblyTitle>AiPhoto 截图翻译</AssemblyTitle>
+    <AssemblyTitle>PinTrans 截图翻译</AssemblyTitle>
+    <Product>PinTrans</Product>
     <!-- Publishing (used by CI): dotnet publish -c Release -r win-x64 -->
     <SatelliteResourceLanguages>zh-Hans;en</SatelliteResourceLanguages>
   </PropertyGroup>

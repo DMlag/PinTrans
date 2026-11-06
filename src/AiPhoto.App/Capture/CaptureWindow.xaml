@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ann="clr-namespace:AiPhoto.App.Annotations"
         xmlns:sel="clr-namespace:AiPhoto.App.Capture.Selection"
-        Title="AiPhoto 截图"
+        Title="PinTrans 截图"
         WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True"
         WindowStartupLocation="Manual" Background="Black"
         UseLayoutRounding="True" SnapsToDevicePixels="True"

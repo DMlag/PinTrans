@@ -138,3 +138,77 @@ public sealed class SettingsStore
 
     private sealed record CloneEnvelope(AppSettings Settings, string? ApiKey, string? ProxyPassword);
 }
+
+/// <summary>
+/// Cross-platform helpers for cleaning up persisted application data and building the Windows
+/// delayed self-cleanup command when uninstalling the portable single-file executable.
+/// </summary>
+public static class UninstallHelper
+{
+    public static bool IsStandaloneExecutable(string? processPath)
+    {
+        if (string.IsNullOrWhiteSpace(processPath)) return false;
+        var trimmed = processPath.Trim().Trim('"');
+        var lastSep = trimmed.LastIndexOfAny(['\\', '/']);
+        var fileName = lastSep >= 0 ? trimmed[(lastSep + 1)..] : trimmed;
+        if (fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            fileName = fileName[..^4];
+        }
+        if (string.IsNullOrWhiteSpace(fileName)) return false;
+        return !string.Equals(fileName, "dotnet", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Best-effort immediate recursive deletion of data/cache directories.</summary>
+    public static void CleanDirectoriesImmediate(IEnumerable<string> directories)
+    {
+        foreach (var dir in directories)
+        {
+            if (string.IsNullOrWhiteSpace(dir)) continue;
+            try
+            {
+                if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>
+    /// Builds a hidden <c>cmd.exe /d /c "..."</c> argument string that waits briefly for the process
+    /// to exit, removes any remaining data/single-file-extraction directories, and optionally deletes
+    /// the standalone executable (plus its parent directory if and only if it becomes empty).
+    /// </summary>
+    public static string BuildDelayedCleanupArguments(IEnumerable<string> directories, string? executableToDelete)
+    {
+        var commands = new List<string>
+        {
+            "ping 127.0.0.1 -n 2 >nul 2>&1"
+        };
+
+        foreach (var dir in directories.Where(d => !string.IsNullOrWhiteSpace(d)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var sanitized = dir.Trim().Replace("\"", "");
+            if (sanitized.Length > 0)
+            {
+                commands.Add($"if exist \"{sanitized}\" rmdir /s /q \"{sanitized}\" >nul 2>&1");
+            }
+        }
+
+        if (IsStandaloneExecutable(executableToDelete))
+        {
+            var exePath = executableToDelete!.Trim().Replace("\"", "");
+            commands.Add($"for /L %i in (1,1,5) do @(if exist \"{exePath}\" (del /f /q \"{exePath}\" >nul 2>&1 & ping 127.0.0.1 -n 2 >nul 2>&1))");
+
+            var lastSep = exePath.LastIndexOfAny(['\\', '/']);
+            var exeDir = lastSep > 0 ? exePath[..lastSep] : null;
+            if (!string.IsNullOrWhiteSpace(exeDir) && !exeDir.EndsWith(':'))
+            {
+                // rmdir without /s only removes the folder if it is completely empty.
+                commands.Add($"rmdir \"{exeDir}\" >nul 2>&1");
+            }
+        }
+
+        return $"/d /c \"{string.Join(" & ", commands)}\"";
+    }
+}

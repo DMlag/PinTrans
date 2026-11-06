@@ -1,14 +1,14 @@
-AiPhoto Open-Source Non-Commercial & ShareAlike License
-AiPhoto 开源非商用及相同方式共享许可协议 (GPL-3.0 Copyleft + Non-Commercial Restriction / CC BY-NC-SA 4.0)
+PinTrans Open-Source Non-Commercial & ShareAlike License
+PinTrans 开源非商用及相同方式共享许可协议 (GPL-3.0 Copyleft + Non-Commercial Restriction / CC BY-NC-SA 4.0)
 
-Copyright (c) 2026 DMlag (https://github.com/DMlag/aiphoto)
+Copyright (c) 2026 DMlag (https://github.com/DMlag/PinTrans)
 All rights reserved under the terms below.
 
 ================================================================================
 一、 中文核心条款（Chinese Summary & Binding Terms）
 ================================================================================
 
-本软件（AiPhoto）及其源代码基于【强制衍生开源（Copyleft / ShareAlike）+ 严禁商业用途（Non-Commercial）】原则公开。任何获取、使用、复制、修改或分发本软件及源代码的个人或组织，均视为完全同意并受以下条款约束：
+本软件（PinTrans）及其源代码基于【强制衍生开源（Copyleft / ShareAlike）+ 严禁商业用途（Non-Commercial）】原则公开。任何获取、使用、复制、修改或分发本软件及源代码的个人或组织，均视为完全同意并受以下条款约束：
 
 1. 允许自由使用与学习（Personal & Non-Commercial Use）
    您可以免费下载、安装、使用本软件，或阅读、复刻（Fork）、修改本项目的源代码，但仅限于个人学习、学术研究或非商业性质的公益交流。
@@ -26,7 +26,7 @@ All rights reserved under the terms below.
    - 将本软件或核心代码集成至商业公司对外销售的产品、商业 SaaS 服务或以盈利为目的的企业商业系统中。
 
 4. 保留署名与许可声明（Attribution）
-   在任何复制、修改或衍生分发中，必须完整保留本 LICENSE 文件、版权声明、原作者署名（DMlag）及原项目仓库链接（https://github.com/DMlag/aiphoto），不得篡改或隐藏。
+   在任何复制、修改或衍生分发中，必须完整保留本 LICENSE 文件、版权声明、原作者署名（DMlag）及原项目仓库链接（https://github.com/DMlag/PinTrans），不得篡改或隐藏。
 
 5. 免责声明（Disclaimer of Warranty）
    本软件按“原样（AS IS）”提供，不附带任何明示或暗示的担保（包括但不限于适销性、特定用途适用性及不侵权担保）。在任何情况下，作者均不对因使用或无法使用本软件而产生的任何直接、间接、偶然或后果性损害承担责任。
@@ -35,7 +35,7 @@ All rights reserved under the terms below.
 II. English Binding Terms (Non-Commercial & Copyleft ShareAlike License)
 ================================================================================
 
-This work ("AiPhoto", including its source code, binaries, documentation, and associated files) is licensed under the GNU General Public License v3.0 (GPL-3.0) with an explicit Additional Non-Commercial Restriction, and concurrently under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0). In the event of any conflict regarding commercial rights, the Non-Commercial Restriction below prevails.
+This work ("PinTrans", including its source code, binaries, documentation, and associated files) is licensed under the GNU General Public License v3.0 (GPL-3.0) with an explicit Additional Non-Commercial Restriction, and concurrently under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0). In the event of any conflict regarding commercial rights, the Non-Commercial Restriction below prevails.
 
 1. Grant of Non-Commercial License
    Subject to the terms and conditions of this License, the Copyright Holder (DMlag) hereby grants you a worldwide, royalty-free, non-exclusive license to use, reproduce, modify, and distribute this software and its source code SOLELY for non-commercial, personal, educational, or academic research purposes.
@@ -53,7 +53,7 @@ This work ("AiPhoto", including its source code, binaries, documentation, and as
    (d) Incorporating the software or its source code into commercial products or for-profit enterprise services.
 
 4. Attribution
-   You must retain all copyright, patent, trademark, and attribution notices, as well as a copy of this License and a visible link to the original repository (https://github.com/DMlag/aiphoto), in all copies and derivative works.
+   You must retain all copyright, patent, trademark, and attribution notices, as well as a copy of this License and a visible link to the original repository (https://github.com/DMlag/PinTrans), in all copies and derivative works.
 
 5. Disclaimer of Warranty and Limitation of Liability
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

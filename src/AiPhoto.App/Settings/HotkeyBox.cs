@@ -64,6 +64,11 @@ public sealed class HotkeyBox : TextBox
             Gesture = HotkeyGesture.None;
             return;
         }
+        if (key is Key.Escape && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            Keyboard.ClearFocus();
+            return;
+        }
         if (key is Key.Tab && Keyboard.Modifiers == ModifierKeys.None)
         {
             e.Handled = false; // keep keyboard navigation

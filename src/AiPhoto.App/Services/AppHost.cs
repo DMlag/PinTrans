@@ -52,7 +52,12 @@ public sealed class AppHost : IAppHost, IDisposable
 
     public void Start(bool background)
     {
+        MigrateLegacySettingsIfNeeded();
         _store.Load();
+        if (string.Equals(Settings.Capture.FileNameTemplate, "AiPhoto_{0:yyyyMMdd_HHmmss}", StringComparison.Ordinal))
+        {
+            Settings.Capture.FileNameTemplate = "PinTrans_{0:yyyyMMdd_HHmmss}";
+        }
         RebuildNetwork();
         CreateTray();
         _hotkeys = new GlobalHotkeyManager();
@@ -62,13 +67,29 @@ public sealed class AppHost : IAppHost, IDisposable
         HotkeyBox.RecordingChanged += SetHotkeysSuspended;
 
         if (failures is not null) Notify("快捷键注册失败", failures, isError: true);
-        else if (!background) Notify("AiPhoto 已在后台运行", $"按 {Settings.Hotkeys.Capture} 截图，{Settings.Hotkeys.CaptureAndTranslate} 截图翻译。右键托盘图标打开设置。");
+        else if (!background) Notify("PinTrans 已在后台运行", $"按 {Settings.Hotkeys.Capture} 截图，{Settings.Hotkeys.CaptureAndTranslate} 截图翻译。右键托盘图标打开设置。");
 
         if (string.IsNullOrWhiteSpace(Settings.Translation.ApiKey) && !background)
         {
             OpenSettings();
         }
         Log.Info($"Started. Settings: {AppPaths.SettingsFile}");
+    }
+
+    private static void MigrateLegacySettingsIfNeeded()
+    {
+        try
+        {
+            if (!File.Exists(AppPaths.SettingsFile) && File.Exists(AppPaths.LegacySettingsFile))
+            {
+                Directory.CreateDirectory(AppPaths.DataDirectory);
+                File.Copy(AppPaths.LegacySettingsFile, AppPaths.SettingsFile, overwrite: false);
+            }
+        }
+        catch (Exception)
+        {
+            // Ignore migration errors and start with fresh settings.
+        }
     }
 
     // ------------------------------------------------------------------ capture entry points
@@ -173,7 +194,7 @@ public sealed class AppHost : IAppHost, IDisposable
         }
         catch (FormatException)
         {
-            name = $"AiPhoto_{DateTime.Now:yyyyMMdd_HHmmss}";
+            name = $"PinTrans_{DateTime.Now:yyyyMMdd_HHmmss}";
         }
         foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
         try { Directory.CreateDirectory(dir); } catch (IOException) { } catch (UnauthorizedAccessException) { }
@@ -278,7 +299,7 @@ public sealed class AppHost : IAppHost, IDisposable
     {
         _tray = new TaskbarIcon
         {
-            ToolTipText = "AiPhoto 截图翻译",
+            ToolTipText = "PinTrans 截图翻译",
             IconSource = new BitmapImage(new Uri("pack://application:,,,/Assets/AppIcon.ico")),
             NoLeftClickDelay = true,
         };

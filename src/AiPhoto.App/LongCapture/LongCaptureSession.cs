@@ -168,7 +168,7 @@ public sealed class LongCaptureSession
             Log.Error("Long capture failed", ex);
             _dispatcher.Invoke(() =>
             {
-                MessageBox.Show($"长截图失败：{ex.Message}", "AiPhoto", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"长截图失败：{ex.Message}", "PinTrans", MessageBoxButton.OK, MessageBoxImage.Error);
                 Cleanup();
             });
         }

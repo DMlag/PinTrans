@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Navigation;
 using AiPhoto.App.Diagnostics;
+using AiPhoto.App.Infrastructure;
 using AiPhoto.Core.Hotkeys;
 using AiPhoto.Core.Imaging;
 using AiPhoto.Core.Net;
@@ -89,7 +90,7 @@ public partial class SettingsWindow : Window
         if (string.IsNullOrWhiteSpace(_settings.Capture.SaveDirectory)) SaveDirBox.Text = AppPaths.DefaultSaveDirectory;
 
         var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "dev";
-        VersionText.Text = $"AiPhoto {version.Split('+')[0]}  ·  设置文件：{AppPaths.SettingsFile}";
+        VersionText.Text = $"PinTrans {version.Split('+')[0]}  ·  设置文件：{AppPaths.SettingsFile}";
         UpdateProxyDetails();
     }
 
@@ -200,10 +201,40 @@ public partial class SettingsWindow : Window
     }
 
     private void OnOpenDataDir(object sender, RoutedEventArgs e)
-        => Process.Start(new ProcessStartInfo(AppPaths.DataDirectory) { UseShellExecute = true });
+    {
+        Directory.CreateDirectory(AppPaths.DataDirectory);
+        Process.Start(new ProcessStartInfo(AppPaths.DataDirectory) { UseShellExecute = true });
+    }
 
     private void OnOpenLogDir(object sender, RoutedEventArgs e)
         => Process.Start(new ProcessStartInfo(Log.Directory) { UseShellExecute = true });
+
+    private void OnClearData(object sender, RoutedEventArgs e)
+    {
+        var result = MessageBox.Show(
+            this,
+            $"确定要清除 PinTrans 留存的所有配置与缓存数据并退出吗？\n\n将会清除：\n• 开机自启注册表项\n• 配置文件、已保存的 API Key 与日志 ({AppPaths.DataDirectory})\n• 单文件运行释放缓存\n\n（软件本体程序文件与已保存的截图图片将保留）",
+            "清除留存数据 — PinTrans",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+        if (result != MessageBoxResult.OK) return;
+        AppUninstaller.CleanDataAndShutdown(deleteExecutable: false);
+    }
+
+    private void OnUninstall(object sender, RoutedEventArgs e)
+    {
+        var exePath = Environment.ProcessPath ?? "PinTrans.exe";
+        var result = MessageBox.Show(
+            this,
+            $"确定要彻底卸载 PinTrans 并清除所有留存数据吗？\n\n将会执行以下操作：\n1. 移除开机自启注册表项\n2. 删除配置文件、已保存的 API Key 与日志 ({AppPaths.DataDirectory})\n3. 清理单文件运行释放缓存\n4. 退出并自动删除本程序文件 ({exePath})\n\n（注：您在图片文件夹中已保存的截图图片不会被删除）",
+            "卸载 PinTrans",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+        if (result != MessageBoxResult.OK) return;
+        AppUninstaller.CleanDataAndShutdown(deleteExecutable: true);
+    }
+
+    private void OnCancel(object sender, RoutedEventArgs e) => Close();
 
     private void OnSave(object sender, RoutedEventArgs e)
     {
@@ -215,20 +246,20 @@ public partial class SettingsWindow : Window
             .Where(g => !g.IsEmpty).Select(g => g.ToString()).ToList();
         if (gestures.Count != gestures.Distinct(StringComparer.OrdinalIgnoreCase).Count())
         {
-            MessageBox.Show(this, "有重复的快捷键，请修改。", "AiPhoto", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "有重复的快捷键，请修改。", "PinTrans", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         if (_settings.Network.ProxyMode is ProxyMode.Http or ProxyMode.Socks5 &&
             (string.IsNullOrWhiteSpace(_settings.Network.ProxyHost) || _settings.Network.ProxyPort is <= 0 or > 65535))
         {
-            MessageBox.Show(this, "代理地址或端口无效。", "AiPhoto", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "代理地址或端口无效。", "PinTrans", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
         var warning = _save(_settings);
         if (warning is not null)
         {
-            MessageBox.Show(this, warning, "AiPhoto", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, warning, "PinTrans", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         Close();
     }

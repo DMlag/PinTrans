@@ -518,7 +518,7 @@ public partial class PinWindow : Window
         OcrDrawerPopup.IsOpen = false;
         Topmost = false;
         var choice = MessageBox.Show(this, _lastError + "\n\n是：重新翻译    否：打开设置    取消：关闭此提示",
-            "AiPhoto 提示", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+            "PinTrans 提示", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
         Topmost = true;
         UpdatePopupOpen();
         switch (choice)

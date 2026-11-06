@@ -42,11 +42,11 @@ public sealed class HotkeySettings
 
 public sealed class CaptureSettings
 {
-    /// <summary>Empty = "Pictures\AiPhoto".</summary>
+    /// <summary>Empty = "Pictures\PinTrans".</summary>
     public string SaveDirectory { get; set; } = "";
 
     /// <summary>File name without extension; <c>{0}</c> is replaced by the timestamp.</summary>
-    public string FileNameTemplate { get; set; } = "AiPhoto_{0:yyyyMMdd_HHmmss}";
+    public string FileNameTemplate { get; set; } = "PinTrans_{0:yyyyMMdd_HHmmss}";
 
     public bool ShowMagnifier { get; set; } = true;
     public SnapMode SnapMode { get; set; } = SnapMode.Smart;

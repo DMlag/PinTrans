@@ -1,7 +1,7 @@
-# AiPhoto 截图翻译
+# PinTrans 截图贴图与 AI 原位翻译
 
-[![Build](https://github.com/DMlag/aiphoto/actions/workflows/build.yml/badge.svg)](https://github.com/DMlag/aiphoto/actions/workflows/build.yml)
-[![Release](https://img.shields.io/github/v/release/DMlag/aiphoto?label=Release)](https://github.com/DMlag/aiphoto/releases)
+[![Build](https://github.com/DMlag/PinTrans/actions/workflows/build.yml/badge.svg)](https://github.com/DMlag/PinTrans/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/DMlag/PinTrans?label=Release)](https://github.com/DMlag/PinTrans/releases)
 [![License](https://img.shields.io/badge/License-NonCommercial--ShareAlike-blue.svg)](LICENSE)
 
 Windows 截图工具，**主要使用多模态大模型接口翻译**。截图直接交给大模型，它一次完成识别和翻译，译文**画在原文的位置上**。  
@@ -45,10 +45,11 @@ Windows 截图工具，**主要使用多模态大模型接口翻译**。截图�
 
 ## 使用
 
-1. 从 [Releases](https://github.com/DMlag/aiphoto/releases) 下载最新版的 `AiPhoto-*-win-x64.zip`（或 `win-arm64.zip`），解压后直接运行 `AiPhoto.exe`。程序是自包含的单文件，不需要另外安装 .NET 运行时。
+1. 从 [Releases](https://github.com/DMlag/PinTrans/releases) 下载最新版的 `PinTrans-*-win-x64.zip`（或 `win-arm64.zip`），解压后直接运行 `PinTrans.exe`。程序是自包含的单文件，不需要另外安装 .NET 运行时。
 2. 第一次运行会打开设置。在 **AI 翻译** 页填写 Gemini API Key（可在 [Google AI Studio](https://aistudio.google.com/apikey) 创建）。若仅使用截图、标注、贴图和离线 OCR/扫码功能，无需填写 API Key 即可直接使用。
 3. 在中国大陆使用 AI 翻译时，可到 **网络代理** 页配置代理（例如 Clash：HTTP `127.0.0.1:7890`），或者填写自建的中转 Base URL，然后点 **测试并获取模型**。
 4. 按 `F1` 截图、按 `F2` 框选区域直接原位翻译、按 `F3` 框选区域离线提取文字或扫描二维码。
+5. 如需彻底清理配置或卸载软件，可在 **设置 → 常规 → 卸载与数据清理** 中一键清除注册表开机启动项、`%AppData%\PinTrans` 配置与日志、单文件释放缓存，并自动移除程序文件（或运行 `PinTrans.exe --uninstall`）。
 
 > **Google AI Ultra 额度提示**：订阅附带的每月 Google Cloud 抵扣金需要在 [Google Developer Program](https://developers.google.com/profile) 的权益页面激活，并关联到 API Key 所在 Cloud 项目的结算账号，Gemini API 的费用才会从这笔额度里扣。截图翻译推荐使用 Flash 系列模型，每次约 $0.001–0.003。
 
@@ -95,8 +96,8 @@ dotnet publish src/AiPhoto.App -c Release -r win-x64 -o publish/win-x64
 
 GitHub Actions（[`.github/workflows/build.yml`](.github/workflows/build.yml)）在每次推送时自动在 Windows 环境编译、运行测试，并产出 `win-x64` 与 `win-arm64` 单文件压缩包；推送 `v*` 标签时自动创建 GitHub Release。
 
-- 设置文件：`%AppData%\AiPhoto\settings.json`（API Key 和代理密码使用 Windows DPAPI 当前用户密钥加密存储）
-- 日志目录：`%AppData%\AiPhoto\logs`
+- 设置文件：`%AppData%\PinTrans\settings.json`（API Key 和代理密码使用 Windows DPAPI 当前用户密钥加密存储）
+- 日志目录：`%AppData%\PinTrans\logs`
 
 ## 已知限制
 
@@ -106,7 +107,7 @@ GitHub Actions（[`.github/workflows/build.yml`](.github/workflows/build.yml)）
 
 ## 开源许可（License）
 
-本项目采用 **[AiPhoto 开源非商用及相同方式共享许可协议 (GPL-3.0 Copyleft + Non-Commercial / CC BY-NC-SA 4.0)](LICENSE)**：
+本项目采用 **[PinTrans 开源非商用及相同方式共享许可协议 (GPL-3.0 Copyleft + Non-Commercial / CC BY-NC-SA 4.0)](LICENSE)**：
 - **允许个人免费使用、学习与修改**；
 - **强制衍生开源（ShareAlike）**：任何修改、二次开发或衍生分发版本，必须以相同协议完整公开源代码；
 - **严禁商业用途（Non-Commercial）**：未经作者书面授权，严禁将本软件或其衍生版本用于任何商业售卖、套壳收费、付费引流或企业商业集成。
