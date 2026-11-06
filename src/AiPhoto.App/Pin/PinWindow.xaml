@@ -35,33 +35,48 @@
         </Canvas>
         </Canvas>
 
-        <Border x:Name="StatusPill" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6"
-                Background="#E6202124" CornerRadius="10" Padding="8,3" Visibility="Collapsed"
-                MouseLeftButtonDown="OnStatusClick" Cursor="Hand">
-            <StackPanel Orientation="Horizontal">
-                <Path x:Name="Spinner" Width="12" Height="12" Margin="0,0,6,0" Stroke="White" StrokeThickness="2"
-                      Data="M6,1 A5,5 0 1 1 1,6" RenderTransformOrigin="0.5,0.5" VerticalAlignment="Center">
-                    <Path.RenderTransform>
-                        <RotateTransform x:Name="SpinnerRotation" />
-                    </Path.RenderTransform>
-                </Path>
-                <TextBlock x:Name="StatusText" Foreground="White" FontSize="12" TextWrapping="Wrap" MaxWidth="420"
-                           VerticalAlignment="Center" />
-            </StackPanel>
-        </Border>
+        <!-- Floating controls live in an external Popup anchored above/below the pin window so they never
+             occlude small pinned regions (e.g. a single line of text) and are never clipped by tiny pin bounds. -->
+        <Popup x:Name="FloatingPopup"
+               PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+               Placement="Custom"
+               AllowsTransparency="True"
+               StaysOpen="True"
+               Focusable="False"
+               MouseEnter="OnPopupMouseEnter"
+               MouseLeave="OnPopupMouseLeave">
+            <Border Background="Transparent" Padding="0,4">
+                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border x:Name="StatusPill" Margin="0,0,6,0"
+                            Background="#E6202124" CornerRadius="10" Padding="8,3" Visibility="Collapsed"
+                            MouseLeftButtonDown="OnStatusClick" Cursor="Hand" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <Path x:Name="Spinner" Width="12" Height="12" Margin="0,0,6,0" Stroke="White" StrokeThickness="2"
+                                  Data="M6,1 A5,5 0 1 1 1,6" RenderTransformOrigin="0.5,0.5" VerticalAlignment="Center">
+                                <Path.RenderTransform>
+                                    <RotateTransform x:Name="SpinnerRotation" />
+                                </Path.RenderTransform>
+                            </Path>
+                            <TextBlock x:Name="StatusText" Foreground="White" FontSize="12" TextWrapping="Wrap" MaxWidth="420"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
 
-        <Border x:Name="HoverBar" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="4"
-                Style="{StaticResource ToolbarBorder}" Padding="2" Visibility="Collapsed">
-            <StackPanel Orientation="Horizontal">
-                <ToggleButton x:Name="OriginalToggle" Style="{StaticResource ToolButton}" Width="28" Height="26"
-                              Click="OnToggleOriginal" ToolTip="显示原文（按住 Shift 临时查看）">
-                    <TextBlock Text="原" FontFamily="{StaticResource UiFont}" FontSize="13" />
-                </ToggleButton>
-                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Click="OnCopyText" ToolTip="复制全部译文" Content="&#xE8C8;" FontSize="14" />
-                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Click="OnSave" ToolTip="另存为" Content="&#xE74E;" FontSize="14" />
-                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Click="OnRetranslate" ToolTip="重新翻译" Content="&#xE72C;" FontSize="14" />
-                <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Click="OnClose" ToolTip="关闭 (Esc / 双击)" Content="&#xE711;" FontSize="14" />
-            </StackPanel>
-        </Border>
+                    <Border x:Name="HoverBar"
+                            Style="{StaticResource ToolbarBorder}" Padding="2" Visibility="Collapsed" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <ToggleButton x:Name="OriginalToggle" Style="{StaticResource ToolButton}" Width="28" Height="26"
+                                          Focusable="False" Click="OnToggleOriginal" ToolTip="显示原文（按住 Shift 临时查看）">
+                                <TextBlock Text="原" FontFamily="{StaticResource UiFont}" FontSize="13" />
+                            </ToggleButton>
+                            <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnCopyText" ToolTip="复制全部译文" Content="&#xE8C8;" FontSize="14" />
+                            <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnSave" ToolTip="另存为" Content="&#xE74E;" FontSize="14" />
+                            <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnRetranslate" ToolTip="重新翻译" Content="&#xE72C;" FontSize="14" />
+                            <Button Style="{StaticResource ToolButton}" Width="28" Height="26" Focusable="False" Click="OnClose" ToolTip="关闭 (Esc / 双击)" Content="&#xE711;" FontSize="14" />
+                        </StackPanel>
+                    </Border>
+                </WrapPanel>
+            </Border>
+        </Popup>
     </Grid>
 </Window>

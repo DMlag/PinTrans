@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using System.Windows;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -27,6 +28,7 @@ public partial class PinWindow : Window
     private readonly PixelRect _initialRect;
     private readonly bool _translateOnLoad;
     private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+    private readonly DispatcherTimer _hoverHideTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private readonly long _createdAt = Environment.TickCount64;
 
     private double _scale = 1;
@@ -35,6 +37,7 @@ public partial class PinWindow : Window
     private CancellationTokenSource? _cts;
     private bool _translating;
     private bool _hasError;
+    private bool _closed;
     private string _lastError = "";
 
     public PinWindow(Bgra32Image image, PixelRect screenRect, IAppHost host, bool translate)
@@ -45,6 +48,8 @@ public partial class PinWindow : Window
         _translateOnLoad = translate;
         InitializeComponent();
 
+        FloatingPopup.CustomPopupPlacementCallback = PlaceFloatingPopup;
+
         ImageView.Source = image.ToBitmapSource();
         ImageView.Width = image.Width;
         ImageView.Height = image.Height;
@@ -53,7 +58,24 @@ public partial class PinWindow : Window
         Layer.Width = image.Width;
         Layer.Height = image.Height;
 
-        _statusTimer.Tick += (_, _) => { _statusTimer.Stop(); if (!_translating && !_hasError) StatusPill.Visibility = Visibility.Collapsed; };
+        _statusTimer.Tick += (_, _) =>
+        {
+            _statusTimer.Stop();
+            if (!_translating && !_hasError)
+            {
+                StatusPill.Visibility = Visibility.Collapsed;
+                UpdatePopupOpen();
+            }
+        };
+        _hoverHideTimer.Tick += (_, _) =>
+        {
+            _hoverHideTimer.Stop();
+            if (!IsMouseOver && !FloatingPopup.IsMouseOver)
+            {
+                HoverBar.Visibility = Visibility.Collapsed;
+                UpdatePopupOpen();
+            }
+        };
 
         SourceInitialized += (_, _) =>
         {
@@ -66,24 +88,92 @@ public partial class PinWindow : Window
         {
             ApplyScale();
             Place(_initialRect.X - _borderPx, _initialRect.Y - _borderPx);
+            UpdatePopupOpen();
             if (_translateOnLoad) _ = TranslateAsync();
         };
+        LocationChanged += (_, _) => RepositionPopup();
+        SizeChanged += (_, _) => RepositionPopup();
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(() =>
         {
             // Keep the image pixel-exact when the window moves to a monitor with another DPI.
             var current = PhysicalPlacement.GetRect(this);
             ApplyScale();
             Place(current.X, current.Y);
+            RepositionPopup();
         }, DispatcherPriority.Background);
 
         MouseLeftButtonDown += OnMouseLeftDown;
         MouseMove += OnMouseMoved;
-        MouseLeave += (_, _) => { HoverBar.Visibility = Visibility.Collapsed; Layer.Highlight = null; };
-        MouseEnter += (_, _) => HoverBar.Visibility = Visibility.Visible;
+        MouseEnter += (_, _) =>
+        {
+            _hoverHideTimer.Stop();
+            HoverBar.Visibility = Visibility.Visible;
+            UpdatePopupOpen();
+        };
+        MouseLeave += (_, _) =>
+        {
+            Layer.Highlight = null;
+            _hoverHideTimer.Start();
+        };
         MouseWheel += OnMouseWheel;
         KeyDown += OnKeyDown;
         KeyUp += OnKeyUp;
-        Closed += (_, _) => { _cts?.Cancel(); _statusTimer.Stop(); };
+        Closed += (_, _) =>
+        {
+            _closed = true;
+            _cts?.Cancel();
+            _statusTimer.Stop();
+            _hoverHideTimer.Stop();
+            FloatingPopup.IsOpen = false;
+        };
+    }
+
+    // ------------------------------------------------------------------ floating popup placement
+
+    private static CustomPopupPlacement[] PlaceFloatingPopup(Size popupSize, Size targetSize, Point offset)
+    {
+        var x = Math.Max(0, targetSize.Width - popupSize.Width);
+        return
+        [
+            // 1. Prefer placing just above the pinned image (the popup's inner Border provides a 4px transparent margin).
+            new CustomPopupPlacement(new Point(x, -popupSize.Height), PopupPrimaryAxis.Horizontal),
+            // 2. If too close to the top of the monitor, place just below the pinned image.
+            new CustomPopupPlacement(new Point(x, targetSize.Height), PopupPrimaryAxis.Horizontal),
+            // 3. Fallback for full-screen pins: top-right inside the pin.
+            new CustomPopupPlacement(new Point(Math.Max(4, x - 4), 4), PopupPrimaryAxis.Horizontal),
+        ];
+    }
+
+    private void OnPopupMouseEnter(object sender, MouseEventArgs e)
+    {
+        _hoverHideTimer.Stop();
+        HoverBar.Visibility = Visibility.Visible;
+        UpdatePopupOpen();
+    }
+
+    private void OnPopupMouseLeave(object sender, MouseEventArgs e)
+    {
+        _hoverHideTimer.Start();
+    }
+
+    private void UpdatePopupOpen()
+    {
+        if (_closed || !IsLoaded)
+        {
+            FloatingPopup.IsOpen = false;
+            return;
+        }
+        var shouldOpen = StatusPill.Visibility == Visibility.Visible || HoverBar.Visibility == Visibility.Visible;
+        FloatingPopup.IsOpen = shouldOpen;
+        if (shouldOpen) RepositionPopup();
+    }
+
+    private void RepositionPopup()
+    {
+        if (!FloatingPopup.IsOpen) return;
+        var offset = FloatingPopup.HorizontalOffset;
+        FloatingPopup.HorizontalOffset = offset + 0.001;
+        FloatingPopup.HorizontalOffset = offset;
     }
 
     // ------------------------------------------------------------------ placement / zoom
@@ -111,6 +201,7 @@ public partial class PinWindow : Window
         _zoom = zoom;
         ApplyScale();
         Place(rect.X, rect.Y);
+        RepositionPopup();
         // Smooth scaling when zoomed out, crisp pixels when zoomed in.
         RenderOptions.SetBitmapScalingMode(ImageView, _zoom >= 1 ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
     }
@@ -136,6 +227,7 @@ public partial class PinWindow : Window
         var point = ImagePoint(e);
         try { DragMove(); } catch (InvalidOperationException) { }
         var after = PhysicalPlacement.GetRect(this);
+        RepositionPopup();
 
         if (before == after && Layer.BlockAt(point) is { } block)
         {
@@ -263,6 +355,7 @@ public partial class PinWindow : Window
         }
         _statusTimer.Stop();
         if (autoHide) _statusTimer.Start();
+        UpdatePopupOpen();
     }
 
     private void OnStatusClick(object sender, MouseButtonEventArgs e)
@@ -271,13 +364,16 @@ public partial class PinWindow : Window
         if (!_hasError)
         {
             StatusPill.Visibility = Visibility.Collapsed;
+            UpdatePopupOpen();
             return;
         }
 
+        FloatingPopup.IsOpen = false;
         Topmost = false;
         var choice = MessageBox.Show(this, _lastError + "\n\n是：重新翻译    否：打开设置    取消：关闭此提示",
             "AiPhoto 翻译失败", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
         Topmost = true;
+        UpdatePopupOpen();
         switch (choice)
         {
             case MessageBoxResult.Yes: _ = TranslateAsync(); break;
@@ -324,9 +420,11 @@ public partial class PinWindow : Window
             DefaultExt = ".png",
             AddExtension = true,
         };
+        FloatingPopup.IsOpen = false;
         Topmost = false;
         var ok = dialog.ShowDialog(this) == true;
         Topmost = true;
+        UpdatePopupOpen();
         if (!ok) return;
         try
         {
