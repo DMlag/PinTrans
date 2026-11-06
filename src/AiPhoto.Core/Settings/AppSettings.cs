@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using AiPhoto.Core.Imaging;
 using AiPhoto.Core.Net;
+using AiPhoto.Core.Snapping;
 using AiPhoto.Core.Translation.Gemini;
 
 namespace AiPhoto.Core.Settings;
@@ -47,8 +48,12 @@ public sealed class CaptureSettings
     public string FileNameTemplate { get; set; } = "AiPhoto_{0:yyyyMMdd_HHmmss}";
 
     public bool ShowMagnifier { get; set; } = true;
+    public SnapMode SnapMode { get; set; } = SnapMode.Smart;
     public bool SnapToWindows { get; set; } = true;
     public bool CopyAfterSave { get; set; }
+
+    [JsonIgnore]
+    public SnapMode EffectiveSnapMode => !SnapToWindows ? SnapMode.Disabled : SnapMode;
 
     /// <summary>Automatically save a .jxr next to the PNG when the capture comes from an HDR display.</summary>
     public bool AutoSaveHdr { get; set; }

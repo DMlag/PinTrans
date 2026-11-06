@@ -9,6 +9,7 @@
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         FontFamily="{StaticResource UiFont}"
         InputMethod.IsInputMethodEnabled="False"
+        KeyboardNavigation.TabNavigation="None"
         Cursor="Cross">
 
     <!-- IME is disabled for the window so single-letter tool shortcuts (R, E, A...) arrive as normal keys instead
@@ -53,7 +54,7 @@
                         <Border x:Name="MagnifierSwatch" Width="12" Height="12" BorderBrush="White" BorderThickness="1" Margin="0,0,4,0" />
                         <TextBlock x:Name="MagnifierColor" Foreground="White" FontSize="11" />
                     </StackPanel>
-                    <TextBlock Text="C 复制颜色" Foreground="#99FFFFFF" FontSize="10" Margin="0,2,0,0" />
+                    <TextBlock x:Name="MagnifierHint" Text="C 复制颜色 · 滚轮/Tab 切换层级" Foreground="#99FFFFFF" FontSize="10" Margin="0,2,0,0" />
                 </StackPanel>
             </Border>
 

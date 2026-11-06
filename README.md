@@ -6,7 +6,7 @@ Windows 截图工具，内置 **Google Gemini 多模态翻译**。截图直接�
 
 | 功能 | 说明 |
 |---|---|
-| 区域截图 | 冻结全屏后框选；单击自动选中窗口；带放大镜和取色；方向键逐像素微调 |
+| 区域截图与智能吸附 | 冻结全屏后框选；支持 **PixPin 风格四层智能吸附**（顶层窗口 + Win32 子控件 + UI Automation 网页/现代 UI 元素 + 图像边缘/文字块）；**鼠标滚轮**或 **`Tab` / `Shift+Tab`** 切换父子层级；带放大镜和取色；方向键逐像素微调 |
 | 标注编辑 | 矩形、椭圆、箭头、直线、画笔、荧光笔、文字、马赛克、序号；可撤销/重做；按住 Shift 约束形状 |
 | AI 翻译（原位显示） | 用 Gemini 结构化输出拿到每段文字的坐标，用背景色盖住原文再画上译文；按住 Shift 看原文；单击某段可复制 |
 | 长截图 | 手动滚动或自动滚动；自动识别固定的页头/页尾；长图可以整张分段翻译 |
@@ -24,7 +24,7 @@ Windows 截图工具，内置 **Google Gemini 多模态翻译**。截图直接�
 | 长截图 | `Ctrl+F1` |
 | 全屏截图到剪贴板 | 未设置 |
 
-截图窗口内：`Enter`/双击 复制并完成 · `Ctrl+S` 保存 · `Ctrl+T` 翻译 · `Ctrl+P` 贴图 · `Ctrl+Z/Y` 撤销/重做 · `R E A L P H T M N` 切换标注工具 · `C` 复制颜色 · `Esc` 退出 · 右键 取消当前工具或选区。
+截图窗口内：`Enter`/双击 复制并完成 · **鼠标滚轮** / `Tab` / `Shift+Tab` 切换父子吸附层级 · `Ctrl+S` 保存 · `Ctrl+T` 翻译 · `Ctrl+P` 贴图 · `Ctrl+Z/Y` 撤销/重做 · `R E A L P H T M N` 切换标注工具 · `C` 复制颜色 · `Esc` 退出 · 右键 取消当前工具或选区。
 
 ## 使用
 
@@ -41,6 +41,7 @@ Windows 截图工具，内置 **Google Gemini 多模态翻译**。截图直接�
 AiPhoto.slnx
 ├─ src/AiPhoto.Core        跨平台的纯逻辑（net10.0），有单元测试
 │  ├─ Imaging/             BGRA / FP16 图像缓冲、色调映射、旋转、文字颜色估计
+│  ├─ Snapping/            智能吸附索引（Z-Order 遮挡裁剪、去重）与纯 C# 图像边缘/文字块检测
 │  ├─ Stitching/           长截图拼接（行哈希 + 固定页头页尾检测）、长图切分
 │  ├─ Translation/         IImageTranslator 抽象、Gemini 实现（SSE 流式 + JSON Schema）、增量 JSON 解析
 │  ├─ Settings/            设置模型与存储（密钥加密由 ISecretProtector 负责）

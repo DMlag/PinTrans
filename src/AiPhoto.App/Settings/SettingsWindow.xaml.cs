@@ -10,6 +10,7 @@ using AiPhoto.Core.Hotkeys;
 using AiPhoto.Core.Imaging;
 using AiPhoto.Core.Net;
 using AiPhoto.Core.Settings;
+using AiPhoto.Core.Snapping;
 using AiPhoto.Core.Translation.Gemini;
 using Microsoft.Win32;
 
@@ -66,6 +67,13 @@ public partial class SettingsWindow : Window
             [ToneMapOperator.Reinhard] = "压缩高光（Reinhard，适合 HDR 游戏/视频）",
             [ToneMapOperator.Aces] = "电影感（ACES）",
         };
+        SnapModeBox.ItemsSource = new Dictionary<SnapMode, string>
+        {
+            [SnapMode.Smart] = "智能识别窗口、控件与文字块（推荐，滚轮 / Tab 切换层级）",
+            [SnapMode.WindowOnly] = "仅识别顶层窗口",
+            [SnapMode.Disabled] = "关闭自动吸附",
+        };
+        if (!_settings.Capture.SnapToWindows) _settings.Capture.SnapMode = SnapMode.Disabled;
         ModelBox.ItemsSource = SuggestedModels;
         TargetLanguageBox.ItemsSource = Languages;
         FontBox.ItemsSource = Fonts.SystemFontFamilies.Select(f => f.Source).OrderBy(n => n).ToList();
@@ -127,6 +135,7 @@ public partial class SettingsWindow : Window
         _settings.Translation.Model = ModelBox.Text.Trim();
         _settings.Translation.TargetLanguage = TargetLanguageBox.Text.Trim();
         _settings.Translation.OverlayFontFamily = FontBox.Text.Trim();
+        _settings.Capture.SnapToWindows = _settings.Capture.SnapMode != SnapMode.Disabled;
         if (SaveDirBox.Text.Trim() == AppPaths.DefaultSaveDirectory) _settings.Capture.SaveDirectory = "";
     }
 

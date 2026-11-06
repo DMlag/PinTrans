@@ -16,6 +16,7 @@ using AiPhoto.Core.Hotkeys;
 using AiPhoto.Core.Imaging;
 using AiPhoto.Core.Net;
 using AiPhoto.Core.Settings;
+using AiPhoto.Core.Snapping;
 using AiPhoto.Core.Translation;
 using AiPhoto.Core.Translation.Gemini;
 using H.NotifyIcon;
@@ -79,7 +80,8 @@ public sealed class AppHost : IAppHost, IDisposable
         try
         {
             // Snapshot first so menus/tooltips that are open at hotkey time are captured as they are.
-            var windows = Settings.Capture.SnapToWindows ? WindowFinder.GetWindowRects() : [];
+            var snapMode = Settings.Capture.EffectiveSnapMode;
+            var windows = snapMode == SnapMode.Disabled ? [] : WindowFinder.GetWindows(includeChildHwnds: snapMode == SnapMode.Smart);
             var sw = Stopwatch.StartNew();
             var snapshot = _capture.CaptureDesktop();
             Log.Info($"Captured {snapshot.Monitors.Count} monitor(s) {snapshot.VirtualBounds} in {sw.ElapsedMilliseconds} ms, HDR={snapshot.HasHdr}");

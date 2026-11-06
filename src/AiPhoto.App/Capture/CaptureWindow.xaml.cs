@@ -13,6 +13,7 @@ using AiPhoto.App.Diagnostics;
 using AiPhoto.App.Imaging;
 using AiPhoto.App.Services;
 using AiPhoto.Core.Imaging;
+using AiPhoto.Core.Snapping;
 using Microsoft.Win32;
 using static AiPhoto.App.Native.NativeMethods;
 
@@ -40,7 +41,9 @@ public partial class CaptureWindow : Window
     private readonly ScreenSnapshot _snapshot;
     private readonly CaptureIntent _mode;
     private readonly IAppHost _host;
-    private readonly List<PixelRect> _snapRects;
+    private readonly SnapMode _snapMode;
+    private readonly SnapIndex _snapIndex;
+    private readonly UiaSnapProvider? _uiaProvider;
     private readonly AnnotationDocument _document = new();
     private readonly AnnotationStyle _style;
     private readonly WriteableBitmap _magnifierBitmap = new(MagnifierCells, MagnifierCells, 96, 96, PixelFormats.Bgra32, null);
@@ -50,6 +53,13 @@ public partial class CaptureWindow : Window
     private Phase _phase = Phase.Hover;
     private Rect? _selection;
     private Rect? _hoverRect;
+    private IReadOnlyList<SnapCandidate> _hoverCandidates = [];
+    private int _hoverLevel;
+    private bool _manualLevelOverride;
+    private Point _manualLevelAnchor;
+    private bool _selectionFromSnap;
+    private (int X, int Y) _lastEdgePoint = (-99999, -99999);
+    private IReadOnlyList<SnapCandidate>? _cachedEdgeCandidates;
     private Point _dragStart;
     private Rect _dragOrigin;
     private ResizeHandle _resizeHandle;
@@ -61,7 +71,7 @@ public partial class CaptureWindow : Window
 
     private enum Phase { Hover, Dragging, Selected, Moving, Resizing, Drawing }
 
-    public CaptureWindow(ScreenSnapshot snapshot, CaptureIntent mode, IAppHost host, List<PixelRect> windowRects)
+    internal CaptureWindow(ScreenSnapshot snapshot, CaptureIntent mode, IAppHost host, IReadOnlyList<WindowSnapTarget> windows)
     {
         _snapshot = snapshot;
         _mode = mode;
@@ -80,11 +90,31 @@ public partial class CaptureWindow : Window
 
         var vb = snapshot.VirtualBounds;
         var canvasBounds = new PixelRect(0, 0, vb.Width, vb.Height);
-        _snapRects = windowRects
-            .Select(r => r.Offset(-vb.X, -vb.Y).Intersect(canvasBounds))
-            .Where(r => !r.IsEmpty)
-            .Concat(snapshot.Monitors.Select(m => m.Bounds.Offset(-vb.X, -vb.Y)))
-            .ToList();
+        _snapMode = host.Settings.Capture.EffectiveSnapMode;
+        _snapIndex = new SnapIndex(canvasBounds);
+
+        var uiaTargets = new List<(int WindowIndex, IntPtr Hwnd, PixelRect CanvasBounds)>(windows.Count);
+        if (_snapMode != SnapMode.Disabled)
+        {
+            foreach (var w in windows)
+            {
+                var winRect = w.ScreenBounds.Offset(-vb.X, -vb.Y).Intersect(canvasBounds);
+                if (winRect.IsEmpty) continue;
+                var childHwnds = _snapMode == SnapMode.Smart
+                    ? w.ChildHwnds.Select(c => c with { Rect = c.Rect.Offset(-vb.X, -vb.Y) })
+                    : null;
+                var idx = _snapIndex.AddWindow(winRect, w.Title, childHwnds);
+                if (w.Hwnd != IntPtr.Zero) uiaTargets.Add((idx, w.Hwnd, winRect));
+            }
+        }
+        foreach (var m in snapshot.Monitors)
+        {
+            _snapIndex.AddMonitor(m.Bounds.Offset(-vb.X, -vb.Y), "全屏");
+        }
+        if (_snapMode == SnapMode.Smart && uiaTargets.Count > 0)
+        {
+            _uiaProvider = new UiaSnapProvider(uiaTargets, vb.X, vb.Y, _snapIndex, OnUiaWindowPopulated);
+        }
 
         Backdrop.Source = snapshot.Composite.ToBitmapSource();
         Backdrop.Width = vb.Width;
@@ -121,10 +151,31 @@ public partial class CaptureWindow : Window
         MouseMove += OnMouseMoved;
         MouseLeftButtonUp += OnMouseLeftUp;
         MouseRightButtonUp += OnMouseRightUp;
+        MouseWheel += OnMouseWheel;
+        PreviewKeyDown += OnPreviewKeyDown;
         KeyDown += OnKeyDown;
         Deactivated += (_, _) => { if (!_closing && _phase == Phase.Hover) Activate(); };
         // Alt+F4 / system close bypass CloseCapture(): mark closing so Deactivated does not re-activate us.
-        Closing += (_, _) => _closing = true;
+        Closing += (_, _) =>
+        {
+            _closing = true;
+            _uiaProvider?.Dispose();
+        };
+    }
+
+    private void OnUiaWindowPopulated(int windowIndex)
+    {
+        if (_closing) return;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_closing || _phase != Phase.Hover) return;
+            var px = (int)_lastMouse.X;
+            var py = (int)_lastMouse.Y;
+            if (_snapIndex.TopWindowIndexAt(px, py) == windowIndex)
+            {
+                UpdateHover(_lastMouse, preserveLevel: _manualLevelOverride);
+            }
+        });
     }
 
     // ------------------------------------------------------------------ window setup
@@ -324,13 +375,15 @@ public partial class CaptureWindow : Window
         switch (_phase)
         {
             case Phase.Dragging:
+                var fromSnap = false;
                 if (_selection is null || _selection.Value.Width < 3 || _selection.Value.Height < 3)
                 {
-                    // A click (no drag) selects the window/monitor under the cursor.
+                    // A click (no drag) selects the control/window/monitor under the cursor.
                     if (_hoverRect is null) { _phase = Phase.Hover; return; }
                     _selection = _hoverRect;
+                    fromSnap = true;
                 }
-                SetSelection(_selection.Value);
+                SetSelection(_selection.Value, fromSnap);
                 EnterSelected();
                 break;
 
@@ -394,6 +447,7 @@ public partial class CaptureWindow : Window
     private void ResetSelection()
     {
         _selection = null;
+        _selectionFromSnap = false;
         _document.Clear();
         SelectTool(AnnotationTool.None);
         Adorner.Selection = null;
@@ -408,10 +462,11 @@ public partial class CaptureWindow : Window
         UpdateMagnifier(_lastMouse);
     }
 
-    private void SetSelection(Rect r)
+    private void SetSelection(Rect r, bool fromSnap = false)
     {
         r = Rect.Intersect(r, new Rect(0, 0, Backdrop.Width, Backdrop.Height));
         if (r.IsEmpty) return;
+        _selectionFromSnap = fromSnap;
         _selection = new Rect(Math.Round(r.X), Math.Round(r.Y), Math.Round(r.Width), Math.Round(r.Height));
         Adorner.Selection = _selection;
         Adorner.Hover = null;
@@ -441,13 +496,111 @@ public partial class CaptureWindow : Window
         return new Rect(new Point(Math.Min(l, rt), Math.Min(t, b)), new Point(Math.Max(l, rt), Math.Max(t, b)));
     }
 
-    private void UpdateHover(Point p)
+    private void UpdateHover(Point p, bool preserveLevel = false)
     {
-        // Window rectangles come first (front to back), monitors last; without snapping only monitors are present.
-        var hit = _snapRects.FirstOrDefault(r => r.Contains((int)p.X, (int)p.Y));
-        _hoverRect = hit.IsEmpty ? null : hit.ToRect();
+        var px = Math.Clamp((int)p.X, 0, Math.Max(0, _snapshot.Composite.Width - 1));
+        var py = Math.Clamp((int)p.Y, 0, Math.Max(0, _snapshot.Composite.Height - 1));
+
+        // Keep manual hierarchy level (from wheel/Tab) against tiny 1-3px hand jitter right before clicking.
+        if (_manualLevelOverride)
+        {
+            if (Math.Abs(p.X - _manualLevelAnchor.X) < 4 && Math.Abs(p.Y - _manualLevelAnchor.Y) < 4)
+            {
+                preserveLevel = true;
+            }
+            else
+            {
+                _manualLevelOverride = false;
+            }
+        }
+
+        IReadOnlyList<SnapCandidate>? edgeCandidates = null;
+        if (_snapMode == SnapMode.Smart)
+        {
+            var topWin = _snapIndex.TopWindowIndexAt(px, py);
+            if (topWin >= 0) _uiaProvider?.PrioritizeWindow(topWin);
+
+            if (Math.Abs(px - _lastEdgePoint.X) >= 2 || Math.Abs(py - _lastEdgePoint.Y) >= 2 || _cachedEdgeCandidates is null)
+            {
+                _lastEdgePoint = (px, py);
+                var clip = topWin >= 0 ? _snapIndex.GetWindowRect(topWin) : _snapIndex.CanvasBounds;
+                _cachedEdgeCandidates = EdgeRectDetector.DetectAroundPoint(_snapshot.Composite, px, py, clip);
+            }
+            edgeCandidates = _cachedEdgeCandidates;
+        }
+
+        var prevRect = _hoverCandidates.Count > 0 && _hoverLevel < _hoverCandidates.Count
+            ? _hoverCandidates[_hoverLevel].Rect
+            : default;
+
+        _hoverCandidates = _snapIndex.Query(px, py, edgeCandidates);
+        if (_hoverCandidates.Count == 0)
+        {
+            _hoverLevel = 0;
+            _hoverRect = null;
+        }
+        else
+        {
+            if (preserveLevel && !prevRect.IsEmpty)
+            {
+                var match = -1;
+                for (var i = 0; i < _hoverCandidates.Count; i++)
+                {
+                    if (SnapIndex.AreNearlyEqual(_hoverCandidates[i].Rect, prevRect)) { match = i; break; }
+                }
+                _hoverLevel = match >= 0 ? match : Math.Clamp(_hoverLevel, 0, _hoverCandidates.Count - 1);
+            }
+            else
+            {
+                _hoverLevel = 0;
+            }
+            _hoverRect = _hoverCandidates[_hoverLevel].Rect.ToRect();
+        }
+
         Adorner.Hover = _hoverRect;
         Adorner.InvalidateVisual();
+        UpdateSizeLabel();
+    }
+
+    /// <summary>
+    /// Steps up (<c>+1</c> = parent/outer region) or down (<c>-1</c> = child/inner region) in the snap hierarchy stack.
+    /// Supported via both mouse wheel and <c>Tab</c> / <c>Shift+Tab</c>.
+    /// </summary>
+    private bool StepHierarchyLevel(int delta)
+    {
+        if (_hoverCandidates.Count <= 1) return false;
+
+        if (_phase == Phase.Hover)
+        {
+            _hoverLevel = Math.Clamp(_hoverLevel + delta, 0, _hoverCandidates.Count - 1);
+            _manualLevelOverride = true;
+            _manualLevelAnchor = _lastMouse;
+            _hoverRect = _hoverCandidates[_hoverLevel].Rect.ToRect();
+            Adorner.Hover = _hoverRect;
+            Adorner.InvalidateVisual();
+            UpdateSizeLabel();
+            return true;
+        }
+
+        if (_phase == Phase.Selected && _selectionFromSnap && _tool == AnnotationTool.None && _document.IsEmpty)
+        {
+            _hoverLevel = Math.Clamp(_hoverLevel + delta, 0, _hoverCandidates.Count - 1);
+            SetSelection(_hoverCandidates[_hoverLevel].Rect.ToRect(), fromSnap: true);
+            ShowToolbar();
+            return true;
+        }
+
+        return false;
+    }
+
+    private void OnMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (TextEditor.IsVisible || e.Delta == 0) return;
+        // Wheel up (e.Delta > 0) expands to parent container; wheel down (e.Delta < 0) shrinks to child control.
+        if (StepHierarchyLevel(e.Delta > 0 ? +1 : -1))
+        {
+            e.Handled = true;
+        }
     }
 
     private bool IsOnToolbar(RoutedEventArgs e)
@@ -523,14 +676,52 @@ public partial class CaptureWindow : Window
 
     private void UpdateSizeLabel()
     {
-        if (_selection is not { } s) { SizeLabel.Visibility = Visibility.Collapsed; return; }
-        SizeText.Text = $"{(int)s.Width} × {(int)s.Height}";
+        Rect target;
+        string text;
+
+        if (_phase == Phase.Hover)
+        {
+            if (_hoverRect is not { } hr || _hoverCandidates.Count == 0)
+            {
+                SizeLabel.Visibility = Visibility.Collapsed;
+                return;
+            }
+            target = hr;
+            var cand = _hoverCandidates[Math.Clamp(_hoverLevel, 0, _hoverCandidates.Count - 1)];
+            text = _hoverCandidates.Count > 1
+                ? $"{cand.DisplayLabel}  {(int)hr.Width} × {(int)hr.Height}  ({_hoverLevel + 1}/{_hoverCandidates.Count} · 滚轮/Tab 切换)"
+                : $"{cand.DisplayLabel}  {(int)hr.Width} × {(int)hr.Height}";
+        }
+        else if (_selection is { } s)
+        {
+            target = s;
+            if (_selectionFromSnap && _hoverCandidates.Count > 0 && _hoverLevel < _hoverCandidates.Count)
+            {
+                var cand = _hoverCandidates[_hoverLevel];
+                text = _hoverCandidates.Count > 1
+                    ? $"{cand.DisplayLabel}  {(int)s.Width} × {(int)s.Height}  ({_hoverLevel + 1}/{_hoverCandidates.Count})"
+                    : $"{cand.DisplayLabel}  {(int)s.Width} × {(int)s.Height}";
+            }
+            else
+            {
+                text = $"{(int)s.Width} × {(int)s.Height}";
+            }
+        }
+        else
+        {
+            SizeLabel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        SizeText.Text = text;
         SizeLabel.Visibility = Visibility.Visible;
         SizeLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var ui = ToUi(s.TopLeft);
+        var ui = ToUi(target.TopLeft);
+        var monitor = MonitorUiBounds(target.TopLeft);
+        var left = Math.Clamp(ui.X, monitor.Left + 4, Math.Max(monitor.Left + 4, monitor.Right - SizeLabel.DesiredSize.Width - 4));
         var top = ui.Y - SizeLabel.DesiredSize.Height - 4;
-        Canvas.SetLeft(SizeLabel, ui.X);
-        Canvas.SetTop(SizeLabel, top < MonitorUiBounds(s.TopLeft).Top ? ui.Y + 4 : top);
+        Canvas.SetLeft(SizeLabel, left);
+        Canvas.SetTop(SizeLabel, top < monitor.Top + 4 ? ui.Y + 4 : top);
     }
 
     // ------------------------------------------------------------------ toolbar
@@ -716,6 +907,20 @@ public partial class CaptureWindow : Window
     }
 
     // ------------------------------------------------------------------ keyboard
+
+    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (TextEditor.IsVisible) return;
+        if (e.Key == Key.Tab)
+        {
+            var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+            // Tab expands to parent container; Shift+Tab shrinks to child control.
+            if (StepHierarchyLevel(shift ? -1 : +1))
+            {
+                e.Handled = true;
+            }
+        }
+    }
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {

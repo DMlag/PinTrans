@@ -250,8 +250,8 @@
                     <TextBlock Style="{StaticResource HintText}" Margin="140,8,0,0" TextWrapping="Wrap"
                                Text="点击输入框后直接按下组合键即可修改，Backspace 清除。若与其他软件（如 Snipaste 默认 F1）冲突会注册失败并提示。" />
                     <TextBlock Style="{StaticResource HintText}" Margin="140,14,0,0" TextWrapping="Wrap">
-                        截图窗口内快捷键：Enter/双击 复制并完成 · Ctrl+S 保存 · Ctrl+T 翻译 · Ctrl+P 贴图 · Ctrl+Z/Y 撤销/重做 ·
-                        R 矩形 · E 椭圆 · A 箭头 · L 直线 · P 画笔 · H 荧光笔 · T 文字 · M 马赛克 · N 序号 · 方向键 微调 · C 复制颜色 · Esc 退出
+                        截图窗口内快捷键：Enter/双击 复制并完成 · 滚轮 / Tab / Shift+Tab 切换父子控件层级 · Ctrl+S 保存 · Ctrl+T 翻译 · Ctrl+P 贴图 ·
+                        Ctrl+Z/Y 撤销/重做 · R 矩形 · E 椭圆 · A 箭头 · L 直线 · P 画笔 · H 荧光笔 · T 文字 · M 马赛克 · N 序号 · 方向键 微调 · C 复制颜色 · Esc 退出
                     </TextBlock>
                 </StackPanel>
             </TabItem>
@@ -280,8 +280,19 @@
                         </Grid>
                         <TextBlock Style="{StaticResource HintText}" Margin="110,0,0,6" Text="{}{0:yyyyMMdd_HHmmss} 会替换为当前时间。" />
 
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="自动吸附范围" Style="{StaticResource SettingsLabel}" />
+                            <ComboBox x:Name="SnapModeBox" Grid.Column="1" DisplayMemberPath="Value" SelectedValuePath="Key"
+                                      SelectedValue="{Binding Capture.SnapMode}" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource HintText}" Margin="110,0,0,6"
+                                   Text="智能吸附支持窗口、子控件、网页/Electron 元素与文字块；截图悬停或单击选中后可用鼠标滚轮或 Tab / Shift+Tab 切换父子层级。" />
+
                         <CheckBox Content="显示放大镜" IsChecked="{Binding Capture.ShowMagnifier}" />
-                        <CheckBox Content="自动识别窗口（单击即可选中窗口）" IsChecked="{Binding Capture.SnapToWindows}" />
                         <CheckBox Content="保存后同时复制到剪贴板" IsChecked="{Binding Capture.CopyAfterSave}" />
 
                         <GroupBox Header="HDR" Margin="0,10,0,10">
