@@ -10,13 +10,20 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  EnableWindowsTargeting: true
 
 jobs:
   build:
-    runs-on: windows-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: instabox-medium
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -37,10 +44,10 @@ jobs:
           Write-Host "Version: $v"
 
       - name: Restore
-        run: dotnet restore AiPhoto.slnx
+        run: dotnet restore AiPhoto.slnx -p:EnableWindowsTargeting=true
 
       - name: Build
-        run: dotnet build AiPhoto.slnx -c Release --no-restore -p:Version=${{ steps.version.outputs.version }}
+        run: dotnet build AiPhoto.slnx -c Release --no-restore -p:EnableWindowsTargeting=true -p:Version=${{ steps.version.outputs.version }}
 
       - name: Test
         run: dotnet test tests/AiPhoto.Core.Tests -c Release --no-build --logger "trx;LogFileName=results.trx" --results-directory TestResults
@@ -64,7 +71,7 @@ jobs:
         run: |
           foreach ($rid in 'win-x64', 'win-arm64') {
             dotnet publish src/AiPhoto.App/AiPhoto.App.csproj -c Release -r $rid -o "publish/$rid" `
-              -p:Version=${{ steps.version.outputs.version }}
+              -p:EnableWindowsTargeting=true -p:Version=${{ steps.version.outputs.version }}
             New-Item -ItemType Directory -Force -Path "publish/$rid/models/ppocrv4" | Out-Null
             Copy-Item "models/ppocrv4/*.onnx" -Destination "publish/$rid/models/ppocrv4/" -Force
             Compress-Archive -Path "publish/$rid/*" -DestinationPath "PinTrans-${{ steps.version.outputs.version }}-$rid.zip"
